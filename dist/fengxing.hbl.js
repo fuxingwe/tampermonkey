@@ -6,19 +6,251 @@
 // @author              fengxing
 // @copyright           fengxing
 // @license             MIT
-// @match               https://mis.aplum.com/mis/product-editor/index
+// @match               *://*.aplum.com/mis/*
 // @run-at              document-idle
 // @supportURL          https://baidu.com
 // @homepage            https://baidu.com
 // @grant               GM_getValue
 // @grant               GM_setValue
-// @grant               GM_registerMenuCommand
+// @grant               GM_setClipboard
 // @icon                data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAAXNSR0IArs4c6QAAAttJREFUaEPtWVtSAjEQTKC0vISUn3IK8WTAycBT6KeFl7C0JFZGg9mQTPcsiyUqn5qdpLvnlYl3J/7zJ35+9/cA3E/OF965uSgXwjqMx8vp4/O6j5JiK4Qb5/0s2oo2rp9eby22aAXury5mfrtd1YwH55bTzcvCsnGHiOLD680LfS564cPl2UqYavwsIDQyRFgDITyAyXlQGf50J0YF//Y218gQVyJVoAAgxphDW9eE0eiWiS0KQNz8ASlgPSFYP6gCcS8t6FJGMmFQ4ilmJDYb0QogFVjGEkhNUdZ9oq3BAFgyB8poFjJoAKULxU1qf0NuVCaExHauiIUMCkBr09KtmI077Ge+3ocM2oVam9aCW5NfI6K0xZBBAUCbWlTIiagdsFSBAQFdSGM/+fteio1V2fu7Mh52TaBSaa2upAKwGEOZJQeDmLUEtArAYmhIABbiOgDih4mpXZ8u7aFeGfv0ShYV5N6RXHI0Wuc9kgBAbQKqjBb2c1dSM1Z+caoUl3QmD9lD7IONtMKGVGCI9ZC9RkbZuVq6XqIS3Pq/Yr/jxjUVnFv6726T++JsfXfaAEJY7zVke0gPkJhhO8ZBk900sVDcDwbxoYF2SBCj+IyZ6CONKiMTKQNgStArjlB2I8/ULWRXFzO33cropMwAh+Tsmgqm2oIKWUtmSyuBcnZnD8R+UVs08n53Mye9fjaRa8XC3p2hkllYl2Ta91xNeB9gLhnspsglmctT5Y6Bs3U5kc5nNpZNUZvMEmFSIC1usce4WL5hDiJ3SQsRvQAcbazyWWOQezWrNXagrxXqNM0wEkcp9ziDLVAZLZtKdlOGxRZbMAvtYgA8cKQnIlrRgR5LeACnPF5HzR7NumEh6pWSqeEU+MlPTNJyk1MChmRkC41xetWBsi/KjaD7Qg2UBoJ1H2n7GcbyNVJ55cuPx+k4cLK+ESd7ElvZi2UfIswArICPvf4fwLEZRvbfAT8jlbXobXLcAAAAAElFTkSuQmCC
 // @require             file:///Users/fx/WorkSpace/tampermonkey/dist/fengxing.hbl.js
 // ==/UserScript==
 
+// const clickedProducts= new Set();
 (function() {
-  'use strict';
-  console.log("11123");
-  // Your code here...
+    console.log("fengxing");
+    let enable = checkEnable();
+    if (!enable)
+    {
+        console.log("checkEnable is false");
+        return;
+    }
+    let pathname = location.pathname;
+    console.log(pathname);
+    processBorrowTip();
+    if(pathname.endsWith("/mis/product/view"))
+    {//商品详情页
+        tryClickPriceEle(document.getElementById("dis_price_mask"))
+        tryClickPriceEle(document.getElementById("seller_user_masked"))
+        tryClickPriceEle(document.getElementById("pangu_guide_price_mask"))
+    }
+    else if (pathname.endsWith("/activity-new/view-douyin-live"))
+    {
+        let group = document.getElementsByClassName("el-radio-group")[1];
+        var span = document.createElement("span");
+        span.innerHTML="<br><br><br><br>"
+        span.className="el-checkbox__label"
+        group.appendChild(span);
+        let btn = document.createElement("button");
+        btn.textContent = "批量复制商品ID";
+        btn.className="el-radio-button__inner";
+        btn.style.background = 'green';
+        btn.style.color="white"
+
+        let vue2App = document.getElementById("vue2-app").__vue__
+
+        btn.addEventListener("click", () => {
+            let selectedProducts=vue2App.selectedProducts
+            let selectedPids=selectedProducts.map((t) => t.p_id)
+            console.log(selectedPids)
+            if(selectedPids!=null && selectedPids.length>0)
+            {
+                copyStr=selectedPids.join("\n")
+                GM_setClipboard(copyStr)
+                Toast("复制成功，粘贴即可，"+copyStr,4000)
+            }
+            else
+            {
+                Toast("请先选择至少一个商品",4000)
+            }
+        });
+        group.appendChild(btn);
+    }
+    else if (pathname.endsWith("/toonsale/view"))
+    {
+        let elements = document.getElementsByClassName("hand-style");
+        if (elements.length>0)
+        {
+            for (let i = 0; i < elements.length; i++)
+            {
+                tryClickPriceEle(elements[i])
+            }
+        }
+    }
+    else if(pathname.endsWith("/product-editor/index"))
+    {//商品刷新页
+        // 搜索按钮点击
+        // let searchButton = document.querySelector(".el-button.el-button--primary.el-button--medium")
+        // searchButton?.addEventListener("click",()=>{
+        //     clickedProducts.clear()
+        // })
+        // clickedProducts.clear()
+        try {
+            let count=0
+            let timer = setInterval(()=>{
+                count++
+                clickAllProducts()
+            },1000)
+        } catch (error) {
+            console.log(error)
+        }
+    }
 })();
+
+// function getActivitySelectedPIds()
+// {
+//     try {
+//         let selectedEles = document.getElementsByClassName("el-checkbox is-checked")
+//         if (selectedEles==null || selectedEles.length<=0 )
+//         {
+//             return null
+//         }
+        
+//         selectedPids=new Set()
+//         for (let i = 0; i < selectedEles.length; i++)
+//         {
+//             selectedPids.add(selectedEles[i].textContent)
+//         }
+//         return selectedPids;
+//     } catch (error) {
+//         console.log(error)
+//     } 
+// }
+
+function Toast(msg,duration){
+    try {
+        duration=isNaN(duration)?3000:duration;
+        var m = document.createElement('div');
+        m.innerHTML = msg;
+        m.style.cssText="max-width:60%;min-width: 150px;padding:0 14px;height: 40px;color: rgb(255, 255, 255);line-height: 40px;text-align: center;border-radius: 4px;position: fixed;top: 50%;left: 50%;transform: translate(-50%, -50%);z-index: 9999999999;background: rgba(0, 0, 0,.7);font-size: 16px;";
+        document.body.appendChild(m);
+        setTimeout(function() {
+          var d = 0.5;
+          m.style.webkitTransition = '-webkit-transform ' + d + 's ease-in, opacity ' + d + 's ease-in';
+          m.style.opacity = '0';
+          setTimeout(function() { document.body.removeChild(m) }, d * 1000);
+        }, duration);
+    } catch (error) {
+        console.log(error)
+    }
+  }
+
+function clickAllProducts()
+{
+    try {
+        document.getElementsByClassName("el-table__body-wrapper is-scrolling-left")
+        let rows = document.getElementsByClassName("el-table__body-wrapper is-scrolling-left")[0].getElementsByClassName("el-table_1_column_6 is-left");
+        if(rows.length<=0)
+        {
+            return;
+        }
+        for (let i = 0; i < rows.length; i++)
+        {
+            // let id = rows[i].parentElement.getElementsByClassName("el-button el-tooltip el-button--text")[0].textContent.trim()
+            // if(!clickedProducts.has(id))
+            // {
+                let priceEle = rows[i].querySelector("div > sapn > div")
+                tryClickPriceEle(priceEle)
+                let sellerEle = rows[i].parentElement.getElementsByClassName("el-button el-button--text")[1]
+                tryClickPriceEle(sellerEle)
+                // clickedProducts.add(id);
+            }
+        // }
+    } catch (error) {
+        console.log(error)
+    } 
+}
+
+
+function processBorrowTip()
+{
+    try {
+        //检测到借出提示，就把倒计时设置为1秒
+        document.getElementsByClassName("global-modal-div")[0].getElementsByTagName("span")[0].textContent=1;
+    } catch (error) {
+        // console.log(error)
+    }
+    
+}
+
+function checkEnable()
+{
+    try {
+        let name = getCookie('http_login_name');
+        if (name === null || name.length<=0)
+        {
+            return false;
+        }
+        return name.includes("tangtianyu")||name.includes("zhangruqi")
+    }
+    catch (error) {
+        console.log(error)
+    }
+    return true
+}
+
+function tryClickPriceEle(ele) {
+    try {
+        if(ele ==null)
+        {
+            return;
+        }
+        if(!ele.textContent.includes("****"))
+        {
+            return;
+        }
+        ele.click();
+        
+    } catch (error) {
+        console.log(error)
+    }
+  }
+
+function getCookie(name) {
+    let cookies = document.cookie.split('; ');
+
+    for(let i = 0; i < cookies.length; i++) {
+      let cookie = cookies[i];
+      let [cookieName, value] = cookie.split('=');
+
+      if(cookieName === name) {
+        return value;
+      }
+    }
+
+    return null;  // 如果没有找到指定的 cookie，返回 null
+  }
+
+//异步等待元素的Visibility变为指定值
+async function waitForElementVisibility(element,timeoutInSeconds,visibility) {
+    if (element===null)
+    {
+        return true
+    }
+    for (let index = 0; index < timeoutInSeconds; index++) {
+        await new Promise((resolve,reject)=>{
+            setTimeout(resolve,1000)
+        });
+        console.log("waitForSelectorVisibility index:"+index)
+        if (element.checkVisibility()===visibility) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
+//异步等待元素出现
+async function waitForSelector(selector,timeoutInSecondsi) {
+    for (let index = 0; index < timeoutInSeconds; index++) {
+        await new Promise((resolve,reject)=>{
+            setTimeout(resolve,1000)
+        });
+        console.log("waitForSelector index:"+index)
+        if (document.querySelector(selector)!==null) {
+            return true;
+        }
+    }
+    return false;
+}
