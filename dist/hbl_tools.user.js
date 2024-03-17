@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name                fengxingzhushou
-// @namespace           https://github.com/fengxing/fengxingzhushou
+// @name                hbl_tools
+// @namespace           https://github.com/fengxing/fbl_tools
 // @version             0.0.1
-// @description         fengxingzhushou
+// @description         hbl_tools
 // @author              fengxing
 // @copyright           fengxing
 // @license             MIT
