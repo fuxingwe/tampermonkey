@@ -56,12 +56,14 @@
             if (!vue2App.checkSelectProduct()) {
                 return;
             }
-            copyStr=selectedPids.join("\n")
+            let copyStr=selectedPids.join("\n")
             GM_setClipboard(copyStr)
             vue2App.$message({
                 type: "success",
                 message: "复制成功，粘贴即可，"+copyStr,
             });
+
+            tryDeleteBorrowedProduct(13043549)
         });
         group.appendChild(btn);
     }
@@ -187,6 +189,45 @@ function checkEnable()
     }
     return true
 }
+
+function tryDeleteBorrowedProduct(pid) {
+    try {
+        $.ajax({
+            url: "/mis/borrow-ticket/detail-list?TBorrowTicketProductSearch%5Bborrow_ticket_id%5D=&TBorrowTicketProductSearch%5Bop_id%5D=&TBorrowTicketProductSearch%5Bcategory%5D=&TBorrowTicketProductSearch%5Bexpress_type%5D=&TBorrowTicketProductSearch%5Bproduct_id%5D="+ pid+"&TBorrowTicketProductSearch%5Bcreate_time_start%5D=&TBorrowTicketProductSearch%5Bcreate_time_end%5D=&TBorrowTicketProductSearch%5Bremark%5D=&TBorrowTicketProductSearch%5Bproduct_status%5D=&TBorrowTicketProductSearch%5Bticket_status%5D=&TBorrowTicketProductSearch%5Bblogger_nickname%5D=&TBorrowTicketProductSearch%5Bmulti_status%5D=",
+            type: "get",
+            // data: {"TBorrowTicketProductSearch[product_id]": 13043549},
+            success(result) {
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(result, 'text/html');
+                let borrowid = doc.getElementsByClassName("table table-striped table-bordered")[0].querySelector("tbody > tr").getAttribute("data-key")
+                if(borrowid ===null)
+                {
+                    return
+                }
+                $.ajax({
+                    url: '/mis/borrow-ticket/delete-product-new', 
+                    type: "post",
+                    data:{id: borrowid}, 
+                    
+                    success(result) {
+                        if (result.code === 0) {
+                            console.log(result.message)
+                        }
+                    },
+                    error(xhr) {
+                        console.log(xhr.statusText)
+                    },
+                });
+            },
+            error(xhr) {
+                console.log(xhr)
+            },
+        });
+        
+    } catch (error) {
+        console.log(error)
+    }
+  }
 
 function tryClickPriceEle(ele) {
     try {
