@@ -14,7 +14,6 @@
 // @grant               GM_setValue
 // @grant               GM_setClipboard
 // @icon                data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAAXNSR0IArs4c6QAAAttJREFUaEPtWVtSAjEQTKC0vISUn3IK8WTAycBT6KeFl7C0JFZGg9mQTPcsiyUqn5qdpLvnlYl3J/7zJ35+9/cA3E/OF965uSgXwjqMx8vp4/O6j5JiK4Qb5/0s2oo2rp9eby22aAXury5mfrtd1YwH55bTzcvCsnGHiOLD680LfS564cPl2UqYavwsIDQyRFgDITyAyXlQGf50J0YF//Y218gQVyJVoAAgxphDW9eE0eiWiS0KQNz8ASlgPSFYP6gCcS8t6FJGMmFQ4ilmJDYb0QogFVjGEkhNUdZ9oq3BAFgyB8poFjJoAKULxU1qf0NuVCaExHauiIUMCkBr09KtmI077Ge+3ocM2oVam9aCW5NfI6K0xZBBAUCbWlTIiagdsFSBAQFdSGM/+fteio1V2fu7Mh52TaBSaa2upAKwGEOZJQeDmLUEtArAYmhIABbiOgDih4mpXZ8u7aFeGfv0ShYV5N6RXHI0Wuc9kgBAbQKqjBb2c1dSM1Z+caoUl3QmD9lD7IONtMKGVGCI9ZC9RkbZuVq6XqIS3Pq/Yr/jxjUVnFv6726T++JsfXfaAEJY7zVke0gPkJhhO8ZBk900sVDcDwbxoYF2SBCj+IyZ6CONKiMTKQNgStArjlB2I8/ULWRXFzO33cropMwAh+Tsmgqm2oIKWUtmSyuBcnZnD8R+UVs08n53Mye9fjaRa8XC3p2hkllYl2Ta91xNeB9gLhnspsglmctT5Y6Bs3U5kc5nNpZNUZvMEmFSIC1usce4WL5hDiJ3SQsRvQAcbazyWWOQezWrNXagrxXqNM0wEkcp9ziDLVAZLZtKdlOGxRZbMAvtYgA8cKQnIlrRgR5LeACnPF5HzR7NumEh6pWSqeEU+MlPTNJyk1MChmRkC41xetWBsi/KjaD7Qg2UBoJ1H2n7GcbyNVJ55cuPx+k4cLK+ESd7ElvZi2UfIswArICPvf4fwLEZRvbfAT8jlbXobXLcAAAAAElFTkSuQmCC
-// @require             file:///Users/fx/WorkSpace/tampermonkey/dist/fengxing.hbl.js
 // ==/UserScript==
 
 // const clickedProducts= new Set();
@@ -54,16 +53,15 @@
             let selectedProducts=vue2App.selectedProducts
             let selectedPids=selectedProducts.map((t) => t.p_id)
             console.log(selectedPids)
-            if(selectedPids!=null && selectedPids.length>0)
-            {
-                copyStr=selectedPids.join("\n")
-                GM_setClipboard(copyStr)
-                Toast("复制成功，粘贴即可，"+copyStr,4000)
+            if (!vue2App.checkSelectProduct()) {
+                return;
             }
-            else
-            {
-                Toast("请先选择至少一个商品",4000)
-            }
+            copyStr=selectedPids.join("\n")
+            GM_setClipboard(copyStr)
+            vue2App.$message({
+                type: "success",
+                message: "复制成功，粘贴即可，"+copyStr,
+            });
         });
         group.appendChild(btn);
     }
