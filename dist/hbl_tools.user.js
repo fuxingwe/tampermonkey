@@ -63,9 +63,41 @@
                 message: "复制成功，粘贴即可，"+copyStr,
             });
 
-            tryDeleteBorrowedProduct(13043549)
+            // tryDeleteBorrowedProduct(13043549)
         });
         group.appendChild(btn);
+
+        // let pidToData= new Map()//key:pid,value:data
+        // (vue2App.cardData ?? []).forEach(
+        //     (t) => (pidToData.set(t.p_id,t))
+        // );
+
+        let timer = setInterval(()=>{
+            if(vue2App.cardData.length<=0)
+            {
+                return;
+            }
+            let elements = document.getElementsByClassName("view-shop-content")[0].getElementsByClassName("el-checkbox");
+            if (elements.length==vue2App.cardData.length)
+            {
+                for (let i = 0; i < elements.length; i++)
+                {
+                    if(elements[i].childElementCount>=3)
+                    {
+                        continue;
+                    }
+                    data = vue2App.cardData[i];
+                    //借出状态
+                    var span = document.createElement("span");
+                    span.innerHTML=data.lend_status;
+                    span.className="el-checkbox__label"
+                    span.style.textAlign = 'right';
+                    elements[i].appendChild(span);
+
+                    //delete按钮 enable_delete
+                }
+            }
+        },2000)
     }
     else if (pathname.endsWith("/toonsale/view"))
     {
