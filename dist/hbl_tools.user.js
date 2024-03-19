@@ -36,19 +36,15 @@
     }
     else if (pathname.endsWith("/activity-new/view-douyin-live"))
     {
-        let group = document.getElementsByClassName("el-radio-group")[1];
-        var span = document.createElement("span");
-        span.innerHTML="<br><br><br><br>"
-        span.className="el-checkbox__label"
-        group.appendChild(span);
+        let vue2App = document.getElementById("vue2-app").__vue__
+        
+        let group = document.getElementsByClassName("view-shop-footer")[0];
+
         let btn = document.createElement("button");
         btn.textContent = "批量复制商品ID";
-        btn.className="el-radio-button__inner";
+        btn.className="el-button el-button--primary el-button--mini";
         btn.style.background = 'green';
-        btn.style.color="white"
-
-        let vue2App = document.getElementById("vue2-app").__vue__
-
+        group.appendChild(btn);
         btn.addEventListener("click", () => {
             let selectedProducts=vue2App.selectedProducts
             let selectedPids=selectedProducts.map((t) => t.p_id)
@@ -62,16 +58,54 @@
                 type: "success",
                 message: "复制成功，粘贴即可，"+copyStr,
             });
-
-            // tryDeleteBorrowedProduct(13043549)
         });
-        group.appendChild(btn);
 
-        // let pidToData= new Map()//key:pid,value:data
-        // (vue2App.cardData ?? []).forEach(
-        //     (t) => (pidToData.set(t.p_id,t))
-        // );
+        let deleteBtn = btn.cloneNode(true)
+        deleteBtn.textContent="批量删除(支持删借出)"
+        group.appendChild(deleteBtn);
+        deleteBtn.addEventListener("click", () => {
+            if (!vue2App.checkSelectProduct()) {
+                return;
+            }
+            vue2App.$confirm("确认要删除商品吗?", "提示", {
+                confirmButtonText: "确定",
+                cancelButtonText: "取消",
+                type: "warning",
+            }).then(() => {
+                let selectedProducts = vue2App.selectedProducts
+                let waitTime = 0
+                for(let i =0;i<selectedProducts.length;i++)
+                {
+                    if(selectedProducts[i].enable_delete===0)
+                    {
+                        tryDeleteBorrowedProduct(vue2App,selectedProducts[i].p_id)
+                        waitTime=2000
+                    }
+                }
 
+                //延迟调用活动页删除
+                setTimeout(()=>{
+                    vue2App.ajax("post", "/mis/activity/batch-delete-product", {
+                        ids: vue2App.selectedProducts.map((t) => t.id),
+                    }).then((res) => {
+                        if (res.success) {
+                            vue2App.$message({
+                                type: "success",
+                                message: "删除成功",
+                            });
+                            vue2App.updateCardData();
+                        } else {
+                            vue2App.$message({
+                                type: "error",
+                                message: res.message,
+                            });
+                        }
+                    });
+                },waitTime)
+            });
+        });
+            
+        //定时执行，因为可能通过搜索来刷新数据
         let timer = setInterval(()=>{
             if(vue2App.cardData.length<=0)
             {
@@ -82,19 +116,78 @@
             {
                 for (let i = 0; i < elements.length; i++)
                 {
-                    if(elements[i].childElementCount>=3)
+                    let element = elements[i];
+                    if(element.childElementCount>=3)
                     {
                         continue;
                     }
-                    data = vue2App.cardData[i];
+                    let data = vue2App.cardData[i];
+                    
                     //借出状态
-                    var span = document.createElement("span");
-                    span.innerHTML=data.lend_status;
-                    span.className="el-checkbox__label"
-                    span.style.textAlign = 'right';
-                    elements[i].appendChild(span);
+                    let node = element.lastElementChild.cloneNode(false);
+                    node.innerHTML="&ensp;&ensp;" + data.lend_status;
+                    element.appendChild(node);
 
-                    //delete按钮 enable_delete
+
+                    if(data.enable_delete==0)
+                    {//没有删除按钮的添加删除按钮
+                        let btn = document.createElement("button");
+                        btn.textContent = "取消借出并删除";
+                        btn.className="el-button el-button--primary el-button--mini";
+                        btn.style.background = 'green';
+                        btn.style.color="white"
+                        element.parentElement.getElementsByClassName("el-row")[0].appendChild(btn);
+
+                        btn.addEventListener("click", () => {
+                            vue2App.$confirm("确认要删除商品吗?", "提示", {
+                                confirmButtonText: "确定",
+                                cancelButtonText: "取消",
+                                type: "warning",
+                            }).then(() => {
+                                tryDeleteBorrowedProduct(vue2App,data.p_id)
+                                //延迟调用活动页删除
+                                setTimeout(()=>{
+                                    vue2App.ajax("get", "/mis/activity/delete-product", {
+                                        ids: [data.id],
+                                    }).then((res) => {
+                                        if (res.success) {
+                                            vue2App.$message({
+                                                type: "success",
+                                                message: "删除成功",
+                                            });
+                                            vue2App.updateCardData();
+                                        } else {
+                                            vue2App.$message({
+                                                type: "error",
+                                                message: res.message,
+                                            });
+                                        }
+                                    });
+                                },2000)
+                                
+                            });
+                        });
+                    }
+
+
+                    //补充额外价格等信息
+                    let tipParentEle =element.nextElementSibling.nextElementSibling.nextElementSibling.nextElementSibling
+                    let tipEles = tipParentEle.getElementsByClassName("el-tooltip")
+                    if(tipEles.count>=7)
+                    {
+                        continue;
+                    }
+                    let ppd_outer_lowest_price = tipEles[1].cloneNode(true);
+                    ppd_outer_lowest_price.textContent="最低销售价:"+data.ppd_outer_lowest_price;
+                    tipParentEle.insertBefore(ppd_outer_lowest_price,tipEles[1])
+
+                    let wms_sp_shelf_code = tipEles[1].cloneNode(true);
+                    wms_sp_shelf_code.innerHTML="库位:"+data.wms_w_name+"<br>&ensp;&ensp;&ensp;&ensp;&ensp;"+data.wms_sp_shelf_code;
+                    tipParentEle.insertBefore(wms_sp_shelf_code,tipEles[3])
+
+                    let p_onsale_time = tipEles[1].cloneNode(true);
+                    p_onsale_time.innerHTML="首次在售时间:<br>"+data.p_onsale_time;
+                    tipParentEle.insertBefore(p_onsale_time,tipEles[3])
                 }
             }
         },2000)
@@ -222,7 +315,7 @@ function checkEnable()
     return true
 }
 
-function tryDeleteBorrowedProduct(pid) {
+function tryDeleteBorrowedProduct(vue2App,pid) {
     try {
         $.ajax({
             url: "/mis/borrow-ticket/detail-list?TBorrowTicketProductSearch%5Bborrow_ticket_id%5D=&TBorrowTicketProductSearch%5Bop_id%5D=&TBorrowTicketProductSearch%5Bcategory%5D=&TBorrowTicketProductSearch%5Bexpress_type%5D=&TBorrowTicketProductSearch%5Bproduct_id%5D="+ pid+"&TBorrowTicketProductSearch%5Bcreate_time_start%5D=&TBorrowTicketProductSearch%5Bcreate_time_end%5D=&TBorrowTicketProductSearch%5Bremark%5D=&TBorrowTicketProductSearch%5Bproduct_status%5D=&TBorrowTicketProductSearch%5Bticket_status%5D=&TBorrowTicketProductSearch%5Bblogger_nickname%5D=&TBorrowTicketProductSearch%5Bmulti_status%5D=",
@@ -234,7 +327,12 @@ function tryDeleteBorrowedProduct(pid) {
                 let borrowid = doc.getElementsByClassName("table table-striped table-bordered")[0].querySelector("tbody > tr").getAttribute("data-key")
                 if(borrowid ===null)
                 {
+                    console.log("tryDeleteBorrowedProduct can not find borrowid,pid ="+pid)
                     return
+                }
+                else
+                {
+                    console.log("tryDeleteBorrowedProduct borrowid ="+borrowid)
                 }
                 $.ajax({
                     url: '/mis/borrow-ticket/delete-product-new', 
@@ -242,17 +340,29 @@ function tryDeleteBorrowedProduct(pid) {
                     data:{id: borrowid}, 
                     
                     success(result) {
-                        if (result.code === 0) {
-                            console.log(result.message)
+                        console.log(result.msg)
+                        if (result.code != 0) {
+                            vue2App.$message({
+                                type: "success",
+                                message: result.msg,
+                            });
                         }
                     },
                     error(xhr) {
                         console.log(xhr.statusText)
+                        vue2App.$message({
+                            type: "fail",
+                            message: xhr.statusText,
+                        });
                     },
                 });
             },
             error(xhr) {
                 console.log(xhr)
+                vue2App.$message({
+                    type: "fail",
+                    message: xhr.statusText,
+                });
             },
         });
         
