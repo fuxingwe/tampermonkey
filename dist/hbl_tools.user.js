@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.0.1
+// @version             0.0.2
 // @description         hbl_tools
 // @author              fengxing
 // @copyright           fengxing
@@ -10,6 +10,9 @@
 // @run-at              document-idle
 // @supportURL          https://baidu.com
 // @homepage            https://baidu.com
+// @require             https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.mini.min.js
+// @require             https://cdn.bootcdn.net/ajax/libs/exceljs/4.3.0/exceljs.min.js
+// @require             https://cdn.bootcdn.net/ajax/libs/FileSaver.js/2.0.5/FileSaver.js
 // @grant               GM_getValue
 // @grant               GM_setValue
 // @grant               GM_setClipboard
@@ -37,11 +40,10 @@
     else if (pathname.endsWith("/activity-new/view-douyin-live"))
     {
         let vue2App = document.getElementById("vue2-app").__vue__
-        
         let group = document.getElementsByClassName("view-shop-footer")[0];
 
         let btn = document.createElement("button");
-        btn.textContent = "批量复制商品ID";
+        btn.textContent = "批量复制ID";
         btn.className="el-button el-button--primary el-button--mini";
         btn.style.background = 'green';
         group.appendChild(btn);
@@ -104,8 +106,27 @@
                 },waitTime)
             });
         });
+
+        let exportButton = btn.cloneNode(true)
+        exportButton.textContent="批量导出(附1张图)"
+        group.appendChild(exportButton);
+        exportButton.addEventListener("click", async () => {
+            await exportProducts2Excel(vue2App,1)
+        });
+        exportButton = btn.cloneNode(true)
+        exportButton.textContent="批量导出(附3张图)"
+        group.appendChild(exportButton);
+        exportButton.addEventListener("click", async () => {
+            await exportProducts2Excel(vue2App,3)
+        });
+        exportButton = btn.cloneNode(true)
+        exportButton.textContent="批量导出(附所有图)"
+        group.appendChild(exportButton);
+        exportButton.addEventListener("click", async () => {
+            await exportProducts2Excel(vue2App,7)
+        });
             
-        //定时执行，因为可能通过搜索来刷新数据
+        //定时执行，补充商品信息，因为可能通过搜索来刷新数据
         let timer = setInterval(()=>{
             if(vue2App.cardData.length<=0)
             {
@@ -191,6 +212,7 @@
                 }
             }
         },2000)
+        
     }
     else if (pathname.endsWith("/toonsale/view"))
     {
@@ -223,25 +245,139 @@
     }
 })();
 
-// function getActivitySelectedPIds()
-// {
-//     try {
-//         let selectedEles = document.getElementsByClassName("el-checkbox is-checked")
-//         if (selectedEles==null || selectedEles.length<=0 )
-//         {
-//             return null
-//         }
+
+//导出商品信息到Excel，可以控制导出图片数量，数量越多导出越慢
+async function exportProducts2Excel(vue2App,imageCount)
+{
+    if (!vue2App.checkSelectProduct()) {
+        return;
+    }
+    const workbook = new ExcelJS.Workbook();
+    // 创建一个冻结了第一行和第一列的工作表
+    const worksheet = workbook.addWorksheet('sheet1', {views:[{state: 'frozen', xSplit: 2, ySplit:1}]});
+    worksheet.properties.defaultRowHeight = 100;
+    worksheet.pageSetup.horizontalCentered=true;
+    worksheet.pageSetup.verticalCentered=true;
+
+    columnStyle ={ alignment: {vertical: 'middle', horizontal: 'center',wrapText: true}}
+    columns=[
+        { header: 'id', key: 'id', width: 9,style: columnStyle},
+        { header: 'name', key: 'name', width: 15,style: columnStyle},
+        { header: '折扣价', key: 'p_discount_price', width:6,style: columnStyle},
+        { header: '最低价', key: 'ppd_outer_lowest_price', width: 6,style: columnStyle},
+        { header: '进货价', key: 'jinHuoPrice', width: 6,style: columnStyle},
+        { header: '借出状态', key: 'lend_status', width: 6,style: columnStyle},
+        { header: '库位', key: 'wms_sp_shelf_code', width: 10,style: columnStyle},
+        { header: '首次在售时间', key: 'p_onsale_time', width: 10,style: columnStyle},
+    ]
+    for(let i=1;i<=imageCount;i++)
+    {
+        if(i==2)
+        {
+            columns.push({ header: '图'+i+'(全套图)', key: 'image'+i, width: 20,style: columnStyle})
+        }
+        else
+        {
+            columns.push({ header: '图'+i, key: 'image'+i, width: 20,style: columnStyle})
+        }
+    }
+    worksheet.columns = columns;
+
+    let selectedProducts= vue2App.selectedProducts
+    let excelFileName=getExcelFileName()
+    vue2App.$message({
+        type: "success",
+        message: "开始导出Excel文件:"+excelFileName,
+    });
+    for(let index=0;index<selectedProducts.length;index++)
+    {
+        let t = selectedProducts[index];
+        let pUrl = "https://mis.aplum.com/mis/product/view?id="+t.p_id
+        worksheet.addRow([ {
+            text: t.p_id,
+            hyperlink: pUrl,
+            tooltip: pUrl
+          }, t.p_name, Math.floor(t.p_discount_price), Math.floor(t.ppd_outer_lowest_price), "****",t.lend_status,t.wms_w_name+" "+t.wms_sp_shelf_code, t.p_onsale_time]);
         
-//         selectedPids=new Set()
-//         for (let i = 0; i < selectedEles.length; i++)
-//         {
-//             selectedPids.add(selectedEles[i].textContent)
-//         }
-//         return selectedPids;
-//     } catch (error) {
-//         console.log(error)
-//     } 
-// }
+        if(imageCount==0)
+        {
+            continue;
+        }
+        if(t.p_photo_urls.length<imageCount)
+        {
+            imageCount=t.p_photo_urls.length;
+        }
+
+        if(t.p_photo_urls.length>=7)
+        {   // 第七张图片是带全套主图，需要交换一下位置
+            let tempUrl = t.p_photo_urls[1]
+            t.p_photo_urls[1] = t.p_photo_urls[6]
+            t.p_photo_urls[6] = tempUrl
+        }
+
+        for(let index2=0;index2<imageCount;index2++)
+        {
+            let row = index+1
+            let column = index2+8
+            vue2App.$message({
+                type: "success",
+                message: "正在下载:第("+(index+1)+"/"+selectedProducts.length+")个商品的("+(index2+1)+"/"+imageCount+")张图片",
+            });
+            // console.log(index,index2,url)
+            url = t.p_photo_urls[index2]+"?imageMogr2/thumbnail/300" //缩放一下，否则太大了
+            let base64Data = await imageToBase64(url)
+            let imageId = workbook.addImage({
+                base64: base64Data,
+                extension: 'png',
+            });
+            worksheet.addImage(imageId, 
+            {
+                tl: { col: column, row: row },
+                br: { col: column+1, row: row+1 },
+                ext: { width:100, height: 100 },
+                editAs: 'undefined'
+            });
+        }
+    }      
+
+    // worksheet.getRow(1).height=10
+    const buffer = await workbook.xlsx.writeBuffer()
+    saveAs(
+        new Blob([buffer], {
+        type: 'application/octet-stream',
+        }),
+        excelFileName
+    )
+    vue2App.$message({
+        type: "success",
+        message: "导出Excel文件成功:"+excelFileName,
+    });
+
+}
+
+// 图片转base64
+function imageToBase64(url) {
+    return new Promise((resolve) => {
+        const image = new Image()
+        // 先设置图片跨域属性
+        image.crossOrigin = 'Anonymous'
+        // 再给image赋值src属性，先后顺序不能颠倒
+        image.src = url
+        image.onload = function () {
+          const canvas = document.createElement('CANVAS')
+          // 设置canvas宽高等于图片实际宽高
+          canvas.width = image.width
+          canvas.height = image.height
+          canvas.getContext('2d').drawImage(image, 0, 0)
+          // toDataUrl可以接收2个参数，参数一：图片类型，参数二： 图片质量0-1（不传默认为0.92）
+          const dataURL = canvas.toDataURL('image/png')
+          resolve(dataURL)
+        }
+        image.onerror = () => {
+          resolve({ message: '相片处理失败' })
+        }
+      })
+  }
 
 function Toast(msg,duration){
     try {
@@ -287,6 +423,31 @@ function clickAllProducts()
     } 
 }
 
+function getExcelFileName()
+{
+    try
+    {
+        id=document.URL.match(/\bid=(\d+)/)[1]
+        activityName =document.getElementsByClassName("el-descriptions-row")[2].lastChild.textContent
+        return id+"_"+activityName+"_"+getCurrentTimeFormatted()+".xlsx"
+    }
+    catch (error) {
+        console.log(error)
+        return getCurrentTimeFormatted()+".xlsx"
+    } 
+}
+
+function getCurrentTimeFormatted() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const day = now.getDate().toString().padStart(2, '0');
+    const hours = now.getHours().toString().padStart(2, '0');
+    const minutes = now.getMinutes().toString().padStart(2, '0');
+    const seconds = now.getSeconds().toString().padStart(2, '0');
+  
+    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
+  }
 
 function processBorrowTip()
 {
@@ -423,7 +584,7 @@ async function waitForElementVisibility(element,timeoutInSeconds,visibility) {
 
 
 //异步等待元素出现
-async function waitForSelector(selector,timeoutInSecondsi) {
+async function waitForSelector(selector,timeoutInSeconds) {
     for (let index = 0; index < timeoutInSeconds; index++) {
         await new Promise((resolve,reject)=>{
             setTimeout(resolve,1000)
