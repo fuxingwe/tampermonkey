@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.0.2
+// @version             0.0.3
 // @description         hbl_tools
 // @author              fengxing
 // @copyright           fengxing
@@ -19,7 +19,6 @@
 // @icon                data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAAXNSR0IArs4c6QAAAttJREFUaEPtWVtSAjEQTKC0vISUn3IK8WTAycBT6KeFl7C0JFZGg9mQTPcsiyUqn5qdpLvnlYl3J/7zJ35+9/cA3E/OF965uSgXwjqMx8vp4/O6j5JiK4Qb5/0s2oo2rp9eby22aAXury5mfrtd1YwH55bTzcvCsnGHiOLD680LfS564cPl2UqYavwsIDQyRFgDITyAyXlQGf50J0YF//Y218gQVyJVoAAgxphDW9eE0eiWiS0KQNz8ASlgPSFYP6gCcS8t6FJGMmFQ4ilmJDYb0QogFVjGEkhNUdZ9oq3BAFgyB8poFjJoAKULxU1qf0NuVCaExHauiIUMCkBr09KtmI077Ge+3ocM2oVam9aCW5NfI6K0xZBBAUCbWlTIiagdsFSBAQFdSGM/+fteio1V2fu7Mh52TaBSaa2upAKwGEOZJQeDmLUEtArAYmhIABbiOgDih4mpXZ8u7aFeGfv0ShYV5N6RXHI0Wuc9kgBAbQKqjBb2c1dSM1Z+caoUl3QmD9lD7IONtMKGVGCI9ZC9RkbZuVq6XqIS3Pq/Yr/jxjUVnFv6726T++JsfXfaAEJY7zVke0gPkJhhO8ZBk900sVDcDwbxoYF2SBCj+IyZ6CONKiMTKQNgStArjlB2I8/ULWRXFzO33cropMwAh+Tsmgqm2oIKWUtmSyuBcnZnD8R+UVs08n53Mye9fjaRa8XC3p2hkllYl2Ta91xNeB9gLhnspsglmctT5Y6Bs3U5kc5nNpZNUZvMEmFSIC1usce4WL5hDiJ3SQsRvQAcbazyWWOQezWrNXagrxXqNM0wEkcp9ziDLVAZLZtKdlOGxRZbMAvtYgA8cKQnIlrRgR5LeACnPF5HzR7NumEh6pWSqeEU+MlPTNJyk1MChmRkC41xetWBsi/KjaD7Qg2UBoJ1H2n7GcbyNVJ55cuPx+k4cLK+ESd7ElvZi2UfIswArICPvf4fwLEZRvbfAT8jlbXobXLcAAAAAElFTkSuQmCC
 // ==/UserScript==
 
-// const clickedProducts= new Set();
 (function () {
   console.log('fengxing');
   let enable = checkEnable();
@@ -33,7 +32,7 @@
 
   if (pathname.endsWith('/mis/product/view')) {
     //商品详情页
-    tryClickPriceEle(document.getElementById('dis_price_mask'));
+    tryClickPriceEle(document.getElementById('in_price_mask'));
     tryClickPriceEle(document.getElementById('seller_user_masked'));
     tryClickPriceEle(document.getElementById('pangu_guide_price_mask'));
   } else if (pathname.endsWith('/activity-new/view-douyin-live')) {
@@ -112,12 +111,12 @@
     exportButton.addEventListener('click', async () => {
       await exportProducts2Excel(vue2App, 1);
     });
-    exportButton = btn.cloneNode(true);
-    exportButton.textContent = '批量导出(附3张图)';
-    group.appendChild(exportButton);
-    exportButton.addEventListener('click', async () => {
-      await exportProducts2Excel(vue2App, 3);
-    });
+    // exportButton = btn.cloneNode(true);
+    // exportButton.textContent = '批量导出(附3张图)';
+    // group.appendChild(exportButton);
+    // exportButton.addEventListener('click', async () => {
+    //   await exportProducts2Excel(vue2App, 3);
+    // });
     exportButton = btn.cloneNode(true);
     exportButton.textContent = '批量导出(附所有图)';
     group.appendChild(exportButton);
