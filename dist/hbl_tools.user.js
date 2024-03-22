@@ -20,579 +20,551 @@
 // ==/UserScript==
 
 // const clickedProducts= new Set();
-(function() {
-    console.log("fengxing");
-    let enable = checkEnable();
-    if (!enable)
-    {
-        console.log("checkEnable is false");
+(function () {
+  console.log('fengxing');
+  let enable = checkEnable();
+  if (!enable) {
+    console.log('checkEnable is false');
+    return;
+  }
+  let pathname = location.pathname;
+  console.log(pathname);
+  processBorrowTip();
+
+  if (pathname.endsWith('/mis/product/view')) {
+    //商品详情页
+    tryClickPriceEle(document.getElementById('dis_price_mask'));
+    tryClickPriceEle(document.getElementById('seller_user_masked'));
+    tryClickPriceEle(document.getElementById('pangu_guide_price_mask'));
+  } else if (pathname.endsWith('/activity-new/view-douyin-live')) {
+    let vue2App = document.getElementById('vue2-app').__vue__;
+    let group = document.getElementsByClassName('view-shop-footer')[0];
+
+    let btn = document.createElement('button');
+    btn.textContent = '批量复制ID';
+    btn.className = 'el-button el-button--primary el-button--mini';
+    btn.style.background = 'green';
+    group.appendChild(btn);
+    btn.addEventListener('click', () => {
+      if (!vue2App.checkSelectProduct()) {
         return;
-    }
-    let pathname = location.pathname;
-    console.log(pathname);
-    processBorrowTip();
-    if(pathname.endsWith("/mis/product/view"))
-    {//商品详情页
-        tryClickPriceEle(document.getElementById("dis_price_mask"))
-        tryClickPriceEle(document.getElementById("seller_user_masked"))
-        tryClickPriceEle(document.getElementById("pangu_guide_price_mask"))
-    }
-    else if (pathname.endsWith("/activity-new/view-douyin-live"))
-    {
-        let vue2App = document.getElementById("vue2-app").__vue__
-        let group = document.getElementsByClassName("view-shop-footer")[0];
+      }
+      let selectedProducts = vue2App.selectedProducts;
+      let selectedPids = selectedProducts.map((t) => t.p_id);
+      let copyStr = selectedPids.join('\n');
+      GM_setClipboard(copyStr);
+      vue2App.$message({
+        type: 'success',
+        message: '复制成功，粘贴即可，' + copyStr,
+      });
+    });
 
-        let btn = document.createElement("button");
-        btn.textContent = "批量复制ID";
-        btn.className="el-button el-button--primary el-button--mini";
-        btn.style.background = 'green';
-        group.appendChild(btn);
-        btn.addEventListener("click", () => {
-            let selectedProducts=vue2App.selectedProducts
-            let selectedPids=selectedProducts.map((t) => t.p_id)
-            console.log(selectedPids)
-            if (!vue2App.checkSelectProduct()) {
-                return;
+    let deleteBtn = btn.cloneNode(true);
+    deleteBtn.textContent = '批量删除(支持删借出)';
+    group.appendChild(deleteBtn);
+    deleteBtn.addEventListener('click', () => {
+      if (!vue2App.checkSelectProduct()) {
+        return;
+      }
+      vue2App
+        .$confirm('确认要删除商品吗?', '提示', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning',
+        })
+        .then(() => {
+          let selectedProducts = vue2App.selectedProducts;
+          let waitTime = 0;
+          for (let i = 0; i < selectedProducts.length; i++) {
+            if (selectedProducts[i].enable_delete === 0) {
+              tryDeleteBorrowedProduct(vue2App, selectedProducts[i].p_id);
+              waitTime = 2000;
             }
-            let copyStr=selectedPids.join("\n")
-            GM_setClipboard(copyStr)
-            vue2App.$message({
-                type: "success",
-                message: "复制成功，粘贴即可，"+copyStr,
-            });
-        });
+          }
 
-        let deleteBtn = btn.cloneNode(true)
-        deleteBtn.textContent="批量删除(支持删借出)"
-        group.appendChild(deleteBtn);
-        deleteBtn.addEventListener("click", () => {
-            if (!vue2App.checkSelectProduct()) {
-                return;
-            }
-            vue2App.$confirm("确认要删除商品吗?", "提示", {
-                confirmButtonText: "确定",
-                cancelButtonText: "取消",
-                type: "warning",
-            }).then(() => {
-                let selectedProducts = vue2App.selectedProducts
-                let waitTime = 0
-                for(let i =0;i<selectedProducts.length;i++)
-                {
-                    if(selectedProducts[i].enable_delete===0)
-                    {
-                        tryDeleteBorrowedProduct(vue2App,selectedProducts[i].p_id)
-                        waitTime=2000
-                    }
+          //延迟调用活动页删除
+          setTimeout(() => {
+            vue2App
+              .ajax('post', '/mis/activity/batch-delete-product', {
+                ids: vue2App.selectedProducts.map((t) => t.id),
+              })
+              .then((res) => {
+                if (res.success) {
+                  vue2App.$message({
+                    type: 'success',
+                    message: '删除成功',
+                  });
+                  vue2App.updateCardData();
+                } else {
+                  vue2App.$message({
+                    type: 'error',
+                    message: res.message,
+                  });
                 }
+              });
+          }, waitTime);
+        });
+    });
 
-                //延迟调用活动页删除
-                setTimeout(()=>{
-                    vue2App.ajax("post", "/mis/activity/batch-delete-product", {
-                        ids: vue2App.selectedProducts.map((t) => t.id),
-                    }).then((res) => {
+    let exportButton = btn.cloneNode(true);
+    exportButton.textContent = '批量导出(附1张图)';
+    group.appendChild(exportButton);
+    exportButton.addEventListener('click', async () => {
+      await exportProducts2Excel(vue2App, 1);
+    });
+    exportButton = btn.cloneNode(true);
+    exportButton.textContent = '批量导出(附3张图)';
+    group.appendChild(exportButton);
+    exportButton.addEventListener('click', async () => {
+      await exportProducts2Excel(vue2App, 3);
+    });
+    exportButton = btn.cloneNode(true);
+    exportButton.textContent = '批量导出(附所有图)';
+    group.appendChild(exportButton);
+    exportButton.addEventListener('click', async () => {
+      await exportProducts2Excel(vue2App, 7);
+    });
+
+    //定时执行，补充商品信息，因为可能通过搜索来刷新数据
+    setInterval(() => {
+      if (vue2App.cardData.length <= 0) {
+        return;
+      }
+      let elements = document.getElementsByClassName('view-shop-content')[0].getElementsByClassName('el-checkbox');
+      if (elements.length == vue2App.cardData.length) {
+        for (let i = 0; i < elements.length; i++) {
+          let element = elements[i];
+          if (element.childElementCount >= 3) {
+            continue;
+          }
+          let data = vue2App.cardData[i];
+
+          //借出状态
+          let node = element.lastElementChild.cloneNode(false);
+          node.innerHTML = '&ensp;&ensp;' + data.lend_status;
+          element.appendChild(node);
+
+          if (data.enable_delete == 0) {
+            //没有删除按钮的添加删除按钮
+            let btn = document.createElement('button');
+            btn.textContent = '取消借出并删除';
+            btn.className = 'el-button el-button--primary el-button--mini';
+            btn.style.background = 'green';
+            btn.style.color = 'white';
+            element.parentElement.getElementsByClassName('el-row')[0].appendChild(btn);
+
+            btn.addEventListener('click', () => {
+              vue2App
+                .$confirm('确认要删除商品吗?', '提示', {
+                  confirmButtonText: '确定',
+                  cancelButtonText: '取消',
+                  type: 'warning',
+                })
+                .then(() => {
+                  tryDeleteBorrowedProduct(vue2App, data.p_id);
+                  //延迟调用活动页删除
+                  setTimeout(() => {
+                    vue2App
+                      .ajax('get', '/mis/activity/delete-product', {
+                        ids: [data.id],
+                      })
+                      .then((res) => {
                         if (res.success) {
-                            vue2App.$message({
-                                type: "success",
-                                message: "删除成功",
-                            });
-                            vue2App.updateCardData();
+                          vue2App.$message({
+                            type: 'success',
+                            message: '删除成功',
+                          });
+                          vue2App.updateCardData();
                         } else {
-                            vue2App.$message({
-                                type: "error",
-                                message: res.message,
-                            });
+                          vue2App.$message({
+                            type: 'error',
+                            message: res.message,
+                          });
                         }
-                    });
-                },waitTime)
+                      });
+                  }, 2000);
+                });
             });
-        });
+          }
 
-        let exportButton = btn.cloneNode(true)
-        exportButton.textContent="批量导出(附1张图)"
-        group.appendChild(exportButton);
-        exportButton.addEventListener("click", async () => {
-            await exportProducts2Excel(vue2App,1)
-        });
-        exportButton = btn.cloneNode(true)
-        exportButton.textContent="批量导出(附3张图)"
-        group.appendChild(exportButton);
-        exportButton.addEventListener("click", async () => {
-            await exportProducts2Excel(vue2App,3)
-        });
-        exportButton = btn.cloneNode(true)
-        exportButton.textContent="批量导出(附所有图)"
-        group.appendChild(exportButton);
-        exportButton.addEventListener("click", async () => {
-            await exportProducts2Excel(vue2App,7)
-        });
-            
-        //定时执行，补充商品信息，因为可能通过搜索来刷新数据
-        let timer = setInterval(()=>{
-            if(vue2App.cardData.length<=0)
-            {
-                return;
-            }
-            let elements = document.getElementsByClassName("view-shop-content")[0].getElementsByClassName("el-checkbox");
-            if (elements.length==vue2App.cardData.length)
-            {
-                for (let i = 0; i < elements.length; i++)
-                {
-                    let element = elements[i];
-                    if(element.childElementCount>=3)
-                    {
-                        continue;
-                    }
-                    let data = vue2App.cardData[i];
-                    
-                    //借出状态
-                    let node = element.lastElementChild.cloneNode(false);
-                    node.innerHTML="&ensp;&ensp;" + data.lend_status;
-                    element.appendChild(node);
+          //补充额外价格等信息
+          let tipParentEle = element.nextElementSibling.nextElementSibling.nextElementSibling.nextElementSibling;
+          let tipEles = tipParentEle.getElementsByClassName('el-tooltip');
+          if (tipEles.count >= 7) {
+            continue;
+          }
+          let ppd_outer_lowest_price = tipEles[1].cloneNode(true);
+          ppd_outer_lowest_price.textContent = '最低销售价:' + data.ppd_outer_lowest_price;
+          tipParentEle.insertBefore(ppd_outer_lowest_price, tipEles[1]);
 
+          let wms_sp_shelf_code = tipEles[1].cloneNode(true);
+          wms_sp_shelf_code.innerHTML =
+            '库位:' + data.wms_w_name + '<br>&ensp;&ensp;&ensp;&ensp;&ensp;' + data.wms_sp_shelf_code;
+          tipParentEle.insertBefore(wms_sp_shelf_code, tipEles[3]);
 
-                    if(data.enable_delete==0)
-                    {//没有删除按钮的添加删除按钮
-                        let btn = document.createElement("button");
-                        btn.textContent = "取消借出并删除";
-                        btn.className="el-button el-button--primary el-button--mini";
-                        btn.style.background = 'green';
-                        btn.style.color="white"
-                        element.parentElement.getElementsByClassName("el-row")[0].appendChild(btn);
-
-                        btn.addEventListener("click", () => {
-                            vue2App.$confirm("确认要删除商品吗?", "提示", {
-                                confirmButtonText: "确定",
-                                cancelButtonText: "取消",
-                                type: "warning",
-                            }).then(() => {
-                                tryDeleteBorrowedProduct(vue2App,data.p_id)
-                                //延迟调用活动页删除
-                                setTimeout(()=>{
-                                    vue2App.ajax("get", "/mis/activity/delete-product", {
-                                        ids: [data.id],
-                                    }).then((res) => {
-                                        if (res.success) {
-                                            vue2App.$message({
-                                                type: "success",
-                                                message: "删除成功",
-                                            });
-                                            vue2App.updateCardData();
-                                        } else {
-                                            vue2App.$message({
-                                                type: "error",
-                                                message: res.message,
-                                            });
-                                        }
-                                    });
-                                },2000)
-                                
-                            });
-                        });
-                    }
-
-
-                    //补充额外价格等信息
-                    let tipParentEle =element.nextElementSibling.nextElementSibling.nextElementSibling.nextElementSibling
-                    let tipEles = tipParentEle.getElementsByClassName("el-tooltip")
-                    if(tipEles.count>=7)
-                    {
-                        continue;
-                    }
-                    let ppd_outer_lowest_price = tipEles[1].cloneNode(true);
-                    ppd_outer_lowest_price.textContent="最低销售价:"+data.ppd_outer_lowest_price;
-                    tipParentEle.insertBefore(ppd_outer_lowest_price,tipEles[1])
-
-                    let wms_sp_shelf_code = tipEles[1].cloneNode(true);
-                    wms_sp_shelf_code.innerHTML="库位:"+data.wms_w_name+"<br>&ensp;&ensp;&ensp;&ensp;&ensp;"+data.wms_sp_shelf_code;
-                    tipParentEle.insertBefore(wms_sp_shelf_code,tipEles[3])
-
-                    let p_onsale_time = tipEles[1].cloneNode(true);
-                    p_onsale_time.innerHTML="首次在售时间:<br>"+data.p_onsale_time;
-                    tipParentEle.insertBefore(p_onsale_time,tipEles[3])
-                }
-            }
-        },2000)
-        
-    }
-    else if (pathname.endsWith("/toonsale/view"))
-    {
-        let elements = document.getElementsByClassName("hand-style");
-        if (elements.length>0)
-        {
-            for (let i = 0; i < elements.length; i++)
-            {
-                tryClickPriceEle(elements[i])
-            }
+          let p_onsale_time = tipEles[1].cloneNode(true);
+          p_onsale_time.innerHTML = '首次在售时间:<br>' + data.p_onsale_time;
+          tipParentEle.insertBefore(p_onsale_time, tipEles[3]);
         }
+      }
+    }, 2000);
+  } else if (pathname.endsWith('/toonsale/view')) {
+    let elements = document.getElementsByClassName('hand-style');
+    if (elements.length > 0) {
+      for (let i = 0; i < elements.length; i++) {
+        tryClickPriceEle(elements[i]);
+      }
     }
-    else if(pathname.endsWith("/product-editor/index"))
-    {//商品刷新页
-        // 搜索按钮点击
-        // let searchButton = document.querySelector(".el-button.el-button--primary.el-button--medium")
-        // searchButton?.addEventListener("click",()=>{
-        //     clickedProducts.clear()
-        // })
-        // clickedProducts.clear()
-        try {
-            let count=0
-            let timer = setInterval(()=>{
-                count++
-                clickAllProducts()
-            },1000)
-        } catch (error) {
-            console.log(error)
-        }
+  } else if (pathname.endsWith('/product-editor/index')) {
+    //商品刷新页
+
+    try {
+      setInterval(() => {
+        clickAllProducts();
+      }, 1000);
+    } catch (error) {
+      console.log(error);
     }
+  }
 })();
 
-
 //导出商品信息到Excel，可以控制导出图片数量，数量越多导出越慢
-async function exportProducts2Excel(vue2App,imageCount)
-{
-    if (!vue2App.checkSelectProduct()) {
-        return;
+async function exportProducts2Excel(vue2App, imageCount) {
+  if (!vue2App.checkSelectProduct()) {
+    return;
+  }
+  const workbook = new ExcelJS.Workbook();
+  // 创建一个冻结了第一行和第一列的工作表
+  const worksheet = workbook.addWorksheet('sheet1', { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] });
+  worksheet.properties.defaultRowHeight = 100;
+  worksheet.pageSetup.horizontalCentered = true;
+  worksheet.pageSetup.verticalCentered = true;
+
+  let columnStyle = { alignment: { vertical: 'middle', horizontal: 'center', wrapText: true } };
+  let columns = [
+    { header: 'id', key: 'id', width: 9, style: columnStyle },
+    { header: 'name', key: 'name', width: 15, style: columnStyle },
+    { header: '折扣价', key: 'p_discount_price', width: 6, style: columnStyle },
+    { header: '最低价', key: 'ppd_outer_lowest_price', width: 6, style: columnStyle },
+    { header: '进货价', key: 'jinHuoPrice', width: 6, style: columnStyle },
+    { header: '借出状态', key: 'lend_status', width: 6, style: columnStyle },
+    { header: '库位', key: 'wms_sp_shelf_code', width: 10, style: columnStyle },
+    { header: '首次在售时间', key: 'p_onsale_time', width: 10, style: columnStyle },
+  ];
+  for (let i = 1; i <= imageCount; i++) {
+    if (i == 2) {
+      columns.push({ header: '图' + i + '(全套图)', key: 'image' + i, width: 20, style: columnStyle });
+    } else {
+      columns.push({ header: '图' + i, key: 'image' + i, width: 20, style: columnStyle });
     }
-    const workbook = new ExcelJS.Workbook();
-    // 创建一个冻结了第一行和第一列的工作表
-    const worksheet = workbook.addWorksheet('sheet1', {views:[{state: 'frozen', xSplit: 2, ySplit:1}]});
-    worksheet.properties.defaultRowHeight = 100;
-    worksheet.pageSetup.horizontalCentered=true;
-    worksheet.pageSetup.verticalCentered=true;
+  }
+  worksheet.columns = columns;
 
-    columnStyle ={ alignment: {vertical: 'middle', horizontal: 'center',wrapText: true}}
-    columns=[
-        { header: 'id', key: 'id', width: 9,style: columnStyle},
-        { header: 'name', key: 'name', width: 15,style: columnStyle},
-        { header: '折扣价', key: 'p_discount_price', width:6,style: columnStyle},
-        { header: '最低价', key: 'ppd_outer_lowest_price', width: 6,style: columnStyle},
-        { header: '进货价', key: 'jinHuoPrice', width: 6,style: columnStyle},
-        { header: '借出状态', key: 'lend_status', width: 6,style: columnStyle},
-        { header: '库位', key: 'wms_sp_shelf_code', width: 10,style: columnStyle},
-        { header: '首次在售时间', key: 'p_onsale_time', width: 10,style: columnStyle},
-    ]
-    for(let i=1;i<=imageCount;i++)
-    {
-        if(i==2)
-        {
-            columns.push({ header: '图'+i+'(全套图)', key: 'image'+i, width: 20,style: columnStyle})
-        }
-        else
-        {
-            columns.push({ header: '图'+i, key: 'image'+i, width: 20,style: columnStyle})
-        }
+  let selectedProducts = vue2App.selectedProducts;
+  let excelFileName = getExcelFileName();
+  vue2App.$message({
+    type: 'success',
+    message: '开始导出Excel文件:' + excelFileName,
+  });
+  for (let index = 0; index < selectedProducts.length; index++) {
+    let t = selectedProducts[index];
+    let pUrl = 'https://mis.aplum.com/mis/product/view?id=' + t.p_id;
+    worksheet.addRow([
+      {
+        text: t.p_id,
+        hyperlink: pUrl,
+        tooltip: pUrl,
+      },
+      t.p_name,
+      Math.floor(t.p_discount_price),
+      Math.floor(t.ppd_outer_lowest_price),
+      '****',
+      t.lend_status,
+      t.wms_w_name + ' ' + t.wms_sp_shelf_code,
+      t.p_onsale_time,
+    ]);
+
+    if (imageCount == 0) {
+      continue;
     }
-    worksheet.columns = columns;
+    if (t.p_photo_urls.length < imageCount) {
+      imageCount = t.p_photo_urls.length;
+    }
 
-    let selectedProducts= vue2App.selectedProducts
-    let excelFileName=getExcelFileName()
-    vue2App.$message({
-        type: "success",
-        message: "开始导出Excel文件:"+excelFileName,
-    });
-    for(let index=0;index<selectedProducts.length;index++)
-    {
-        let t = selectedProducts[index];
-        let pUrl = "https://mis.aplum.com/mis/product/view?id="+t.p_id
-        worksheet.addRow([ {
-            text: t.p_id,
-            hyperlink: pUrl,
-            tooltip: pUrl
-          }, t.p_name, Math.floor(t.p_discount_price), Math.floor(t.ppd_outer_lowest_price), "****",t.lend_status,t.wms_w_name+" "+t.wms_sp_shelf_code, t.p_onsale_time]);
-        
-        if(imageCount==0)
-        {
-            continue;
-        }
-        if(t.p_photo_urls.length<imageCount)
-        {
-            imageCount=t.p_photo_urls.length;
-        }
+    if (t.p_photo_urls.length >= 7) {
+      // 第七张图片是带全套主图，需要交换一下位置
+      let tempUrl = t.p_photo_urls[1];
+      t.p_photo_urls[1] = t.p_photo_urls[6];
+      t.p_photo_urls[6] = tempUrl;
+    }
 
-        if(t.p_photo_urls.length>=7)
-        {   // 第七张图片是带全套主图，需要交换一下位置
-            let tempUrl = t.p_photo_urls[1]
-            t.p_photo_urls[1] = t.p_photo_urls[6]
-            t.p_photo_urls[6] = tempUrl
-        }
+    for (let index2 = 0; index2 < imageCount; index2++) {
+      let row = index + 1;
+      let column = index2 + 8;
+      vue2App.$message({
+        type: 'success',
+        message:
+          '正在下载:第(' +
+          (index + 1) +
+          '/' +
+          selectedProducts.length +
+          ')个商品的(' +
+          (index2 + 1) +
+          '/' +
+          imageCount +
+          ')张图片',
+      });
+      // console.log(index,index2,url)
+      let url = t.p_photo_urls[index2] + '?imageMogr2/thumbnail/300'; //缩放一下，否则太大了
+      let base64Data = await imageToBase64(url);
+      let imageId = workbook.addImage({
+        base64: base64Data,
+        extension: 'png',
+      });
+      worksheet.addImage(imageId, {
+        tl: { col: column, row: row },
+        br: { col: column + 1, row: row + 1 },
+        ext: { width: 100, height: 100 },
+        editAs: 'undefined',
+      });
+    }
+  }
 
-        for(let index2=0;index2<imageCount;index2++)
-        {
-            let row = index+1
-            let column = index2+8
-            vue2App.$message({
-                type: "success",
-                message: "正在下载:第("+(index+1)+"/"+selectedProducts.length+")个商品的("+(index2+1)+"/"+imageCount+")张图片",
-            });
-            // console.log(index,index2,url)
-            url = t.p_photo_urls[index2]+"?imageMogr2/thumbnail/300" //缩放一下，否则太大了
-            let base64Data = await imageToBase64(url)
-            let imageId = workbook.addImage({
-                base64: base64Data,
-                extension: 'png',
-            });
-            worksheet.addImage(imageId, 
-            {
-                tl: { col: column, row: row },
-                br: { col: column+1, row: row+1 },
-                ext: { width:100, height: 100 },
-                editAs: 'undefined'
-            });
-        }
-    }      
-
-    // worksheet.getRow(1).height=10
-    const buffer = await workbook.xlsx.writeBuffer()
-    saveAs(
-        new Blob([buffer], {
-        type: 'application/octet-stream',
-        }),
-        excelFileName
-    )
-    vue2App.$message({
-        type: "success",
-        message: "导出Excel文件成功:"+excelFileName,
-    });
-
+  // worksheet.getRow(1).height=10
+  const buffer = await workbook.xlsx.writeBuffer();
+  window.saveAs(
+    new Blob([buffer], {
+      type: 'application/octet-stream',
+    }),
+    excelFileName
+  );
+  vue2App.$message({
+    type: 'success',
+    message: '导出Excel文件成功:' + excelFileName,
+  });
 }
 
 // 图片转base64
 function imageToBase64(url) {
-    return new Promise((resolve) => {
-        const image = new Image()
-        // 先设置图片跨域属性
-        image.crossOrigin = 'Anonymous'
-        // 再给image赋值src属性，先后顺序不能颠倒
-        image.src = url
-        image.onload = function () {
-          const canvas = document.createElement('CANVAS')
-          // 设置canvas宽高等于图片实际宽高
-          canvas.width = image.width
-          canvas.height = image.height
-          canvas.getContext('2d').drawImage(image, 0, 0)
-          // toDataUrl可以接收2个参数，参数一：图片类型，参数二： 图片质量0-1（不传默认为0.92）
-          const dataURL = canvas.toDataURL('image/png')
-          resolve(dataURL)
-        }
-        image.onerror = () => {
-          resolve({ message: '相片处理失败' })
-        }
-      })
-  }
-
-function Toast(msg,duration){
-    try {
-        duration=isNaN(duration)?3000:duration;
-        var m = document.createElement('div');
-        m.innerHTML = msg;
-        m.style.cssText="max-width:60%;min-width: 150px;padding:0 14px;height: 40px;color: rgb(255, 255, 255);line-height: 40px;text-align: center;border-radius: 4px;position: fixed;top: 50%;left: 50%;transform: translate(-50%, -50%);z-index: 9999999999;background: rgba(0, 0, 0,.7);font-size: 16px;";
-        document.body.appendChild(m);
-        setTimeout(function() {
-          var d = 0.5;
-          m.style.webkitTransition = '-webkit-transform ' + d + 's ease-in, opacity ' + d + 's ease-in';
-          m.style.opacity = '0';
-          setTimeout(function() { document.body.removeChild(m) }, d * 1000);
-        }, duration);
-    } catch (error) {
-        console.log(error)
-    }
-  }
-
-function clickAllProducts()
-{
-    try {
-        document.getElementsByClassName("el-table__body-wrapper is-scrolling-left")
-        let rows = document.getElementsByClassName("el-table__body-wrapper is-scrolling-left")[0].getElementsByClassName("el-table_1_column_6 is-left");
-        if(rows.length<=0)
-        {
-            return;
-        }
-        for (let i = 0; i < rows.length; i++)
-        {
-            // let id = rows[i].parentElement.getElementsByClassName("el-button el-tooltip el-button--text")[0].textContent.trim()
-            // if(!clickedProducts.has(id))
-            // {
-                let priceEle = rows[i].querySelector("div > sapn > div")
-                tryClickPriceEle(priceEle)
-                let sellerEle = rows[i].parentElement.getElementsByClassName("el-button el-button--text")[1]
-                tryClickPriceEle(sellerEle)
-                // clickedProducts.add(id);
-            }
-        // }
-    } catch (error) {
-        console.log(error)
-    } 
+  return new Promise((resolve) => {
+    const image = new Image();
+    // 先设置图片跨域属性
+    image.crossOrigin = 'Anonymous';
+    // 再给image赋值src属性，先后顺序不能颠倒
+    image.src = url;
+    image.onload = function () {
+      const canvas = document.createElement('CANVAS');
+      // 设置canvas宽高等于图片实际宽高
+      canvas.width = image.width;
+      canvas.height = image.height;
+      canvas.getContext('2d').drawImage(image, 0, 0);
+      // toDataUrl可以接收2个参数，参数一：图片类型，参数二： 图片质量0-1（不传默认为0.92）
+      const dataURL = canvas.toDataURL('image/png');
+      resolve(dataURL);
+    };
+    image.onerror = () => {
+      resolve({ message: '相片处理失败' });
+    };
+  });
 }
 
-function getExcelFileName()
-{
-    try
-    {
-        id=document.URL.match(/\bid=(\d+)/)[1]
-        activityName =document.getElementsByClassName("el-descriptions-row")[2].lastChild.textContent
-        return id+"_"+activityName+"_"+getCurrentTimeFormatted()+".xlsx"
+// function Toast(msg,duration){
+//     try {
+//         duration=isNaN(duration)?3000:duration;
+//         var m = document.createElement('div');
+//         m.innerHTML = msg;
+//         m.style.cssText="max-width:60%;min-width: 150px;padding:0 14px;height: 40px;color: rgb(255, 255, 255);line-height: 40px;text-align: center;border-radius: 4px;position: fixed;top: 50%;left: 50%;transform: translate(-50%, -50%);z-index: 9999999999;background: rgba(0, 0, 0,.7);font-size: 16px;";
+//         document.body.appendChild(m);
+//         setTimeout(function() {
+//           var d = 0.5;
+//           m.style.webkitTransition = '-webkit-transform ' + d + 's ease-in, opacity ' + d + 's ease-in';
+//           m.style.opacity = '0';
+//           setTimeout(function() { document.body.removeChild(m) }, d * 1000);
+//         }, duration);
+//     } catch (error) {
+//         console.log(error)
+//     }
+// }
+
+function clickAllProducts() {
+  try {
+    document.getElementsByClassName('el-table__body-wrapper is-scrolling-left');
+    let rows = document
+      .getElementsByClassName('el-table__body-wrapper is-scrolling-left')[0]
+      .getElementsByClassName('el-table_1_column_6 is-left');
+    if (rows.length <= 0) {
+      return;
     }
-    catch (error) {
-        console.log(error)
-        return getCurrentTimeFormatted()+".xlsx"
-    } 
+    for (let i = 0; i < rows.length; i++) {
+      let priceEle = rows[i].querySelector('div > sapn > div');
+      tryClickPriceEle(priceEle);
+      let sellerEle = rows[i].parentElement.getElementsByClassName('el-button el-button--text')[1];
+      tryClickPriceEle(sellerEle);
+    }
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+function getExcelFileName() {
+  try {
+    let id = document.URL.match(/\bid=(\d+)/)[1];
+    let activityName = document.getElementsByClassName('el-descriptions-row')[2].lastChild.textContent;
+    return id + '_' + activityName + '_' + getCurrentTimeFormatted() + '.xlsx';
+  } catch (error) {
+    console.log(error);
+    return getCurrentTimeFormatted() + '.xlsx';
+  }
 }
 
 function getCurrentTimeFormatted() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-    const day = now.getDate().toString().padStart(2, '0');
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const seconds = now.getSeconds().toString().padStart(2, '0');
-  
-    return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
-  }
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = (now.getMonth() + 1).toString().padStart(2, '0');
+  const day = now.getDate().toString().padStart(2, '0');
+  const hours = now.getHours().toString().padStart(2, '0');
+  const minutes = now.getMinutes().toString().padStart(2, '0');
+  const seconds = now.getSeconds().toString().padStart(2, '0');
 
-function processBorrowTip()
-{
-    try {
-        //检测到借出提示，就把倒计时设置为1秒
-        document.getElementsByClassName("global-modal-div")[0].getElementsByTagName("span")[0].textContent=1;
-    } catch (error) {
-        // console.log(error)
-    }
-    
+  return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
 }
 
-function checkEnable()
-{
-    try {
-        let name = getCookie('http_login_name');
-        if (name === null || name.length<=0)
-        {
-            return false;
+function processBorrowTip() {
+  try {
+    //检测到借出提示，就把倒计时设置为1秒
+    document.getElementsByClassName('global-modal-div')[0].getElementsByTagName('span')[0].textContent = 1;
+  } catch (error) {
+    // console.log(error)
+  }
+}
+
+function checkEnable() {
+  try {
+    let name = getCookie('http_login_name');
+    if (name === null || name.length <= 0) {
+      return false;
+    }
+    return name.includes('tangtianyu') || name.includes('zhangruqi');
+  } catch (error) {
+    console.log(error);
+  }
+  return true;
+}
+
+function tryDeleteBorrowedProduct(vue2App, pid) {
+  try {
+    $.ajax({
+      url:
+        '/mis/borrow-ticket/detail-list?TBorrowTicketProductSearch%5Bborrow_ticket_id%5D=&TBorrowTicketProductSearch%5Bop_id%5D=&TBorrowTicketProductSearch%5Bcategory%5D=&TBorrowTicketProductSearch%5Bexpress_type%5D=&TBorrowTicketProductSearch%5Bproduct_id%5D=' +
+        pid +
+        '&TBorrowTicketProductSearch%5Bcreate_time_start%5D=&TBorrowTicketProductSearch%5Bcreate_time_end%5D=&TBorrowTicketProductSearch%5Bremark%5D=&TBorrowTicketProductSearch%5Bproduct_status%5D=&TBorrowTicketProductSearch%5Bticket_status%5D=&TBorrowTicketProductSearch%5Bblogger_nickname%5D=&TBorrowTicketProductSearch%5Bmulti_status%5D=',
+      type: 'get',
+      // data: {"TBorrowTicketProductSearch[product_id]": 13043549},
+      success(result) {
+        var parser = new DOMParser();
+        var doc = parser.parseFromString(result, 'text/html');
+        let borrowid = doc
+          .getElementsByClassName('table table-striped table-bordered')[0]
+          .querySelector('tbody > tr')
+          .getAttribute('data-key');
+        if (borrowid === null) {
+          console.log('tryDeleteBorrowedProduct can not find borrowid,pid =' + pid);
+          return;
+        } else {
+          console.log('tryDeleteBorrowedProduct borrowid =' + borrowid);
         }
-        return name.includes("tangtianyu")||name.includes("zhangruqi")
-    }
-    catch (error) {
-        console.log(error)
-    }
-    return true
-}
-
-function tryDeleteBorrowedProduct(vue2App,pid) {
-    try {
         $.ajax({
-            url: "/mis/borrow-ticket/detail-list?TBorrowTicketProductSearch%5Bborrow_ticket_id%5D=&TBorrowTicketProductSearch%5Bop_id%5D=&TBorrowTicketProductSearch%5Bcategory%5D=&TBorrowTicketProductSearch%5Bexpress_type%5D=&TBorrowTicketProductSearch%5Bproduct_id%5D="+ pid+"&TBorrowTicketProductSearch%5Bcreate_time_start%5D=&TBorrowTicketProductSearch%5Bcreate_time_end%5D=&TBorrowTicketProductSearch%5Bremark%5D=&TBorrowTicketProductSearch%5Bproduct_status%5D=&TBorrowTicketProductSearch%5Bticket_status%5D=&TBorrowTicketProductSearch%5Bblogger_nickname%5D=&TBorrowTicketProductSearch%5Bmulti_status%5D=",
-            type: "get",
-            // data: {"TBorrowTicketProductSearch[product_id]": 13043549},
-            success(result) {
-                var parser = new DOMParser();
-                var doc = parser.parseFromString(result, 'text/html');
-                let borrowid = doc.getElementsByClassName("table table-striped table-bordered")[0].querySelector("tbody > tr").getAttribute("data-key")
-                if(borrowid ===null)
-                {
-                    console.log("tryDeleteBorrowedProduct can not find borrowid,pid ="+pid)
-                    return
-                }
-                else
-                {
-                    console.log("tryDeleteBorrowedProduct borrowid ="+borrowid)
-                }
-                $.ajax({
-                    url: '/mis/borrow-ticket/delete-product-new', 
-                    type: "post",
-                    data:{id: borrowid}, 
-                    
-                    success(result) {
-                        console.log(result.msg)
-                        if (result.code != 0) {
-                            vue2App.$message({
-                                type: "success",
-                                message: result.msg,
-                            });
-                        }
-                    },
-                    error(xhr) {
-                        console.log(xhr.statusText)
-                        vue2App.$message({
-                            type: "fail",
-                            message: xhr.statusText,
-                        });
-                    },
-                });
-            },
-            error(xhr) {
-                console.log(xhr)
-                vue2App.$message({
-                    type: "fail",
-                    message: xhr.statusText,
-                });
-            },
+          url: '/mis/borrow-ticket/delete-product-new',
+          type: 'post',
+          data: { id: borrowid },
+
+          success(result) {
+            console.log(result.msg);
+            if (result.code != 0) {
+              vue2App.$message({
+                type: 'success',
+                message: result.msg,
+              });
+            }
+          },
+          error(xhr) {
+            console.log(xhr.statusText);
+            vue2App.$message({
+              type: 'fail',
+              message: xhr.statusText,
+            });
+          },
         });
-        
-    } catch (error) {
-        console.log(error)
-    }
+      },
+      error(xhr) {
+        console.log(xhr);
+        vue2App.$message({
+          type: 'fail',
+          message: xhr.statusText,
+        });
+      },
+    });
+  } catch (error) {
+    console.log(error);
   }
+}
 
 function tryClickPriceEle(ele) {
-    try {
-        if(ele ==null)
-        {
-            return;
-        }
-        if(!ele.textContent.includes("****"))
-        {
-            return;
-        }
-        ele.click();
-        
-    } catch (error) {
-        console.log(error)
+  try {
+    if (ele == null) {
+      return;
     }
+    if (!ele.textContent.includes('****')) {
+      return;
+    }
+    ele.click();
+  } catch (error) {
+    console.log(error);
   }
-
-function getCookie(name) {
-    let cookies = document.cookie.split('; ');
-
-    for(let i = 0; i < cookies.length; i++) {
-      let cookie = cookies[i];
-      let [cookieName, value] = cookie.split('=');
-
-      if(cookieName === name) {
-        return value;
-      }
-    }
-
-    return null;  // 如果没有找到指定的 cookie，返回 null
-  }
-
-//异步等待元素的Visibility变为指定值
-async function waitForElementVisibility(element,timeoutInSeconds,visibility) {
-    if (element===null)
-    {
-        return true
-    }
-    for (let index = 0; index < timeoutInSeconds; index++) {
-        await new Promise((resolve,reject)=>{
-            setTimeout(resolve,1000)
-        });
-        console.log("waitForSelectorVisibility index:"+index)
-        if (element.checkVisibility()===visibility) {
-            return true;
-        }
-    }
-    return false;
 }
 
+function getCookie(name) {
+  let cookies = document.cookie.split('; ');
+
+  for (let i = 0; i < cookies.length; i++) {
+    let cookie = cookies[i];
+    let [cookieName, value] = cookie.split('=');
+
+    if (cookieName === name) {
+      return value;
+    }
+  }
+
+  return null; //如果没有找到指定的 cookie，返回 null
+}
+
+//异步等待元素的Visibility变为指定值
+async function waitForElementVisibility(element, timeoutInSeconds, visibility) {
+  if (element === null) {
+    return true;
+  }
+  for (let index = 0; index < timeoutInSeconds; index++) {
+    await new Promise((resolve, reject) => {
+      setTimeout(resolve, 1000);
+    });
+    console.log('waitForSelectorVisibility index:' + index);
+    if (element.checkVisibility() === visibility) {
+      return true;
+    }
+  }
+  return false;
+}
 
 //异步等待元素出现
-async function waitForSelector(selector,timeoutInSeconds) {
-    for (let index = 0; index < timeoutInSeconds; index++) {
-        await new Promise((resolve,reject)=>{
-            setTimeout(resolve,1000)
-        });
-        console.log("waitForSelector index:"+index)
-        if (document.querySelector(selector)!==null) {
-            return true;
-        }
+async function waitForSelector(selector, timeoutInSeconds) {
+  for (let index = 0; index < timeoutInSeconds; index++) {
+    await new Promise((resolve, reject) => {
+      setTimeout(resolve, 1000);
+    });
+    console.log('waitForSelector index:' + index);
+    if (document.querySelector(selector) !== null) {
+      return true;
     }
-    return false;
+  }
+  return false;
 }
