@@ -243,7 +243,7 @@ async function exportProducts2Excel(vue2App, imageCount) {
   let columnStyle = { alignment: { vertical: 'middle', horizontal: 'center', wrapText: true } };
   let columns = [
     { header: 'id', key: 'id', width: 9, style: columnStyle },
-    { header: 'name', key: 'name', width: 15, style: columnStyle },
+    { header: 'brand-name', key: 'brand-name', width: 15, style: columnStyle },
     { header: '折扣价', key: 'p_discount_price', width: 6, style: columnStyle },
     { header: '最低价', key: 'ppd_outer_lowest_price', width: 6, style: columnStyle },
     { header: '进货价', key: 'jinHuoPrice', width: 6, style: columnStyle },
@@ -275,7 +275,7 @@ async function exportProducts2Excel(vue2App, imageCount) {
         hyperlink: pUrl,
         tooltip: pUrl,
       },
-      t.p_name,
+      t.brand_name + '-' + t.p_name,
       Math.floor(t.p_discount_price),
       Math.floor(t.ppd_outer_lowest_price),
       '****',
@@ -284,7 +284,7 @@ async function exportProducts2Excel(vue2App, imageCount) {
       t.p_onsale_time,
     ]);
 
-    if (imageCount == 0) {
+    if (imageCount <= 0) {
       continue;
     }
     if (t.p_photo_urls.length < imageCount) {
