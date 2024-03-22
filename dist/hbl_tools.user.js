@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.0.3
+// @version             0.0.4
 // @description         hbl_tools
 // @author              fengxing
 // @copyright           fengxing
@@ -243,13 +243,14 @@ async function exportProducts2Excel(vue2App, imageCount) {
   let columns = [
     { header: 'id', key: 'id', width: 9, style: columnStyle },
     { header: 'brand-name', key: 'brand-name', width: 15, style: columnStyle },
-    { header: '折扣价', key: 'p_discount_price', width: 6, style: columnStyle },
-    { header: '最低价', key: 'ppd_outer_lowest_price', width: 6, style: columnStyle },
+    { header: '抖音价', key: 'dy_sale_price', width: 6, style: columnStyle }, //p_discount_price 折扣价目前无权限获取
+    // { header: '最低价', key: 'ppd_outer_lowest_price', width: 6, style: columnStyle },
     { header: '进货价', key: 'jinHuoPrice', width: 6, style: columnStyle },
     { header: '借出状态', key: 'lend_status', width: 6, style: columnStyle },
     { header: '库位', key: 'wms_sp_shelf_code', width: 10, style: columnStyle },
     { header: '首次在售时间', key: 'p_onsale_time', width: 10, style: columnStyle },
   ];
+  let imageStartIndex = columns.length;
   for (let i = 1; i <= imageCount; i++) {
     if (i == 2) {
       columns.push({ header: '图' + i + '(全套图)', key: 'image' + i, width: 20, style: columnStyle });
@@ -275,8 +276,8 @@ async function exportProducts2Excel(vue2App, imageCount) {
         tooltip: pUrl,
       },
       t.brand_name + '-' + t.p_name,
-      Math.floor(t.p_discount_price),
-      Math.floor(t.ppd_outer_lowest_price),
+      Math.floor(t.dy_sale_price),
+      // Math.floor(t.ppd_outer_lowest_price),
       '****',
       t.lend_status,
       t.wms_w_name + ' ' + t.wms_sp_shelf_code,
@@ -299,7 +300,7 @@ async function exportProducts2Excel(vue2App, imageCount) {
 
     for (let index2 = 0; index2 < imageCount; index2++) {
       let row = index + 1;
-      let column = index2 + 8;
+      let column = index2 + imageStartIndex;
       vue2App.$message({
         type: 'success',
         message:
@@ -387,7 +388,6 @@ function imageToBase64(url) {
 
 function clickAllProducts() {
   try {
-    document.getElementsByClassName('el-table__body-wrapper is-scrolling-left');
     let rows = document
       .getElementsByClassName('el-table__body-wrapper is-scrolling-left')[0]
       .getElementsByClassName('el-table_1_column_6 is-left');
@@ -395,7 +395,7 @@ function clickAllProducts() {
       return;
     }
     for (let i = 0; i < rows.length; i++) {
-      let priceEle = rows[i].querySelector('div > sapn > div');
+      let priceEle = rows[i].getElementsByClassName('text-danger')[0];
       tryClickPriceEle(priceEle);
       let sellerEle = rows[i].parentElement.getElementsByClassName('el-button el-button--text')[1];
       tryClickPriceEle(sellerEle);
