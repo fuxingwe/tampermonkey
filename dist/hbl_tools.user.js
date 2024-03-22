@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.0.4
+// @version             0.0.5
 // @description         hbl_tools
 // @author              fengxing
 // @copyright           fengxing
@@ -10,7 +10,6 @@
 // @run-at              document-idle
 // @supportURL          https://baidu.com
 // @homepage            https://baidu.com
-// @require             https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.mini.min.js
 // @require             https://cdn.bootcdn.net/ajax/libs/exceljs/4.3.0/exceljs.min.js
 // @require             https://cdn.bootcdn.net/ajax/libs/FileSaver.js/2.0.5/FileSaver.js
 // @grant               GM_getValue
@@ -38,6 +37,10 @@
   } else if (pathname.endsWith('/activity-new/view-douyin-live')) {
     let vue2App = document.getElementById('vue2-app').__vue__;
     let group = document.getElementsByClassName('view-shop-footer')[0];
+    //设置为自适应换行
+    group.style.justifyContent = 'flex-start';
+    group.style.display = 'flex';
+    group.style.flexWrap = 'wrap';
 
     let btn = document.createElement('button');
     btn.textContent = '批量复制ID';
@@ -111,12 +114,12 @@
     exportButton.addEventListener('click', async () => {
       await exportProducts2Excel(vue2App, 1);
     });
-    // exportButton = btn.cloneNode(true);
-    // exportButton.textContent = '批量导出(附3张图)';
-    // group.appendChild(exportButton);
-    // exportButton.addEventListener('click', async () => {
-    //   await exportProducts2Excel(vue2App, 3);
-    // });
+    exportButton = btn.cloneNode(true);
+    exportButton.textContent = '批量导出(附3张图)';
+    group.appendChild(exportButton);
+    exportButton.addEventListener('click', async () => {
+      await exportProducts2Excel(vue2App, 3);
+    });
     exportButton = btn.cloneNode(true);
     exportButton.textContent = '批量导出(附所有图)';
     group.appendChild(exportButton);
@@ -136,7 +139,13 @@
           if (element.childElementCount >= 3) {
             continue;
           }
+
           let data = vue2App.cardData[i];
+          //取消平台自采的鼠标提示，影响勾选ID
+          let tipEle = element.nextElementSibling.getElementsByClassName('el-tooltip')[0];
+          let newTipEle = tipEle.cloneNode(true);
+          tipEle.parentElement.insertBefore(newTipEle, tipEle);
+          tipEle.remove();
 
           //借出状态
           let node = element.lastElementChild.cloneNode(false);
@@ -220,7 +229,7 @@
     try {
       setInterval(() => {
         clickAllProducts();
-      }, 1000);
+      }, 2000);
     } catch (error) {
       console.log(error);
     }
@@ -389,7 +398,7 @@ function imageToBase64(url) {
 function clickAllProducts() {
   try {
     let rows = document
-      .getElementsByClassName('el-table__body-wrapper is-scrolling-left')[0]
+      .getElementsByClassName('el-table__body-wrapper')[0]
       .getElementsByClassName('el-table_1_column_6 is-left');
     if (rows.length <= 0) {
       return;
