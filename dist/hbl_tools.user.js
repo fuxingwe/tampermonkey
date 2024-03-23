@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.0.6
+// @version             0.0.7
 // @description         hbl_tools
 // @author              fengxing
 // @copyright           fengxing
@@ -294,6 +294,11 @@
     } catch (error) {
       console.log(error);
     }
+  } else if (pathname.endsWith('/live/index')) {
+    //直播管理页,自动搜索活动页
+    let vue2App = document.getElementById('vue2-app').__vue__;
+    vue2App.searchForm.user_id = 1569406692;
+    vue2App.handleSearch();
   }
 })();
 
