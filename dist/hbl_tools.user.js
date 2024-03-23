@@ -27,6 +27,7 @@
     return;
   }
   let pathname = location.pathname;
+  let faSheBtnProcessed = false;
   console.log(pathname);
   processBorrowTip();
 
@@ -38,6 +39,7 @@
   } else if (pathname.endsWith('/activity-new/view-douyin-live')) {
     let vue2App = document.getElementById('vue2-app').__vue__;
     let group = document.getElementsByClassName('view-shop-footer')[0];
+
     //设置为自适应换行
     group.style.justifyContent = 'flex-start';
     group.style.display = 'flex';
@@ -133,6 +135,26 @@
       if (vue2App.cardData.length <= 0) {
         return;
       }
+
+      //发射按钮点击后自动处理增加导入按钮(刷出来的晚，所以放在setInterval里)
+      if (!faSheBtnProcessed && group.childElementCount > 3) {
+        Array.from(group.children).forEach((t) => {
+          if (t.textContent == '发射') {
+            setInterval(() => {
+              processFaSheProducts(vue2App);
+            }, 2000);
+            t.style.background = 'green';
+            t.textContent = '发射或导入';
+            t.addEventListener('click', () => {
+              //自动搜索需要的活动页
+              vue2App.transmitForm.anchor_name = 1569406692;
+              vue2App.searchLaunchList();
+            });
+            faSheBtnProcessed = true;
+          }
+        });
+      }
+
       let elements = document.getElementsByClassName('view-shop-content')[0].getElementsByClassName('el-checkbox');
 
       if (elements.length == vue2App.cardData.length) {
@@ -144,6 +166,10 @@
           }
         }
         if (Object.keys(noJinHuoPriceDatas).length > 0) {
+          vue2App.$message({
+            type: 'warning',
+            message: '正在请求价格详情，稍等片刻显示,商品数量:' + Object.keys(noJinHuoPriceDatas).length,
+          });
           let msg = await getJinHuoPrices(noJinHuoPriceDatas);
           console.log(msg);
         }
@@ -270,6 +296,116 @@
     }
   }
 })();
+
+const formData = new FormData();
+formData.append('group_id', 0);
+formData.append('is_new', 1);
+async function processFaSheProducts(vue2App) {
+  try {
+    let flagEles = document.getElementsByClassName('el-form demo-form-inline el-form--inline');
+    if (flagEles == null || flagEles.length == 0) {
+      return;
+    }
+    if (!(flagEles[0].childElementCount > 3 && flagEles[0].children[2].textContent.includes('直播间名称'))) {
+      return; //商品详情页的结构也差不多，会触发下面的逻辑，所以这里再过滤一下
+    }
+    let ele = document.getElementsByClassName('el-table modal-form-table el-table--fit el-table--enable-row-hover el-table--enable-row-transition');
+    if (ele == null || ele.length == 0) {
+      return;
+    }
+    let rowEles = ele[0].getElementsByClassName('el-table__row');
+    if (rowEles == null || rowEles.length == 0) {
+      return;
+    }
+
+    let excelRaw = await exportProducts2ExcelRaw(vue2App);
+    if (excelRaw == null || excelRaw == undefined) {
+      return;
+    }
+    formData.set('file', excelRaw, 'exports.xlsx');
+    Array.from(rowEles).forEach((rowEle) => {
+      let btnParent = rowEle.firstChild.firstChild;
+      if (btnParent.childElementCount >= 2) {
+        return;
+      }
+      btnParent.style.display = 'inline';
+      let btn = btnParent.firstChild;
+      let aid = btnParent.parentElement.nextElementSibling.nextElementSibling.textContent;
+      try {
+        //隐藏掉较早的活动页
+        let startTimeStr = btnParent.parentElement.parentElement.children[8].textContent;
+        if (new Date(startTimeStr).getFullYear() < 2024) {
+          btnParent.parentElement.parentElement.style.display = 'none';
+        }
+      } catch (error) {
+        console.log(error);
+      }
+      btn.style.outline = 'auto';
+      let importBtn = btn.cloneNode(true);
+      importBtn.textContent = '导入';
+      importBtn.style.background = 'green';
+      btnParent.appendChild(importBtn);
+      importBtn.addEventListener('click', () => {
+        formData.set('id', aid);
+        $.ajax({
+          type: 'post',
+          url: '/mis/activity/new-import-excel',
+          // contentType: "multipart/form-data",
+          cache: false, //上传文件无需缓存
+          processData: false, //用于对data参数进行序列化处理 这里必须false
+          contentType: false, //必须
+          data: formData,
+          success(result) {
+            if (result.code === 0) {
+              vue2App.$message({
+                type: 'success',
+                message: '导入成功! 2秒后自动打开目标活动页:' + aid,
+              });
+              setTimeout(() => {
+                window.open('https://mis.aplum.com/mis/activity-new/view-douyin-live?id=' + aid);
+              }, 2000);
+            } else {
+              vue2App.$message({
+                type: 'error',
+                message: result.msg,
+              });
+            }
+          },
+          error(xhr) {
+            vue2App.$message({
+              type: 'error',
+              message: xhr.statusText,
+            });
+          },
+        });
+      });
+    });
+  } catch (error) {
+    console.log(error);
+  }
+}
+
+async function exportProducts2ExcelRaw(vue2App) {
+  try {
+    let selectedProducts = vue2App.selectedProducts;
+    if (selectedProducts == null || selectedProducts.length <= 0) {
+      return;
+    }
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('sheet1');
+    worksheet.columns = [{ header: 'id', key: 'id' }];
+
+    for (let index = 0; index < selectedProducts.length; index++) {
+      worksheet.addRow([selectedProducts[index].p_id]);
+    }
+    const buffer = await workbook.xlsx.writeBuffer();
+    return new Blob([buffer], {
+      type: 'application/octet-stream',
+    });
+  } catch (error) {
+    console.log(error);
+  }
+}
 
 //导出商品信息到Excel，可以控制导出图片数量，数量越多导出越慢
 async function exportProducts2Excel(vue2App, imageCount) {
