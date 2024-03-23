@@ -1,7 +1,8 @@
+/* eslint-disable no-undef */
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.0.5
+// @version             0.0.6
 // @description         hbl_tools
 // @author              fengxing
 // @copyright           fengxing
@@ -128,12 +129,25 @@
     });
 
     //定时执行，补充商品信息，因为可能通过搜索来刷新数据
-    setInterval(() => {
+    setInterval(async () => {
       if (vue2App.cardData.length <= 0) {
         return;
       }
       let elements = document.getElementsByClassName('view-shop-content')[0].getElementsByClassName('el-checkbox');
+
       if (elements.length == vue2App.cardData.length) {
+        let noJinHuoPriceDatas = {};
+        for (let i = 0; i < vue2App.cardData.length; i++) {
+          let data = vue2App.cardData[i];
+          if (data.jinHuoPrice === undefined || data.jinHuoPrice === 0) {
+            noJinHuoPriceDatas[data.p_id] = data;
+          }
+        }
+        if (Object.keys(noJinHuoPriceDatas).length > 0) {
+          let msg = await getJinHuoPrices(noJinHuoPriceDatas);
+          console.log(msg);
+        }
+
         for (let i = 0; i < elements.length; i++) {
           let element = elements[i];
           if (element.childElementCount >= 3) {
@@ -198,24 +212,43 @@
           //补充额外价格等信息
           let tipParentEle = element.nextElementSibling.nextElementSibling.nextElementSibling.nextElementSibling;
           let tipEles = tipParentEle.getElementsByClassName('el-tooltip');
-          if (tipEles.count >= 7) {
+          if (tipEles.length >= 9) {
             continue;
           }
-          let ppd_outer_lowest_price = tipEles[1].cloneNode(true);
+          let douyinPriceEle = tipEles[0];
+          let shiChangPriceEle = tipEles[1];
+          let xiaChiEle = tipEles[3];
+          douyinPriceEle.style.color = 'red';
+
+          if (data.jinHuoPrice != null && data.jinHuoPrice != undefined && data.jinHuoPrice > 0) {
+            let jinHuoPriceEle = tipParentEle.lastChild.cloneNode(true);
+            jinHuoPriceEle.textContent = '进货价:' + data.jinHuoPrice;
+            jinHuoPriceEle.style.color = 'darkred';
+
+            tipParentEle.insertBefore(jinHuoPriceEle, shiChangPriceEle);
+          }
+          if (data.liRun != null && data.liRun != undefined) {
+            let liRunEle = tipParentEle.lastChild.cloneNode(true);
+            liRunEle.textContent = '利润:' + data.liRun;
+            liRunEle.style.color = 'red';
+            tipParentEle.insertBefore(liRunEle, shiChangPriceEle);
+          }
+
+          let ppd_outer_lowest_price = tipParentEle.lastChild.cloneNode(true);
           ppd_outer_lowest_price.textContent = '最低销售价:' + data.ppd_outer_lowest_price;
-          tipParentEle.insertBefore(ppd_outer_lowest_price, tipEles[1]);
+          tipParentEle.insertBefore(ppd_outer_lowest_price, shiChangPriceEle);
+          let wms_sp_shelf_code = tipParentEle.lastChild.cloneNode(true);
+          wms_sp_shelf_code.innerHTML = '库位:' + data.wms_w_name + '<br>&ensp;&ensp;&ensp;&ensp;&ensp;' + data.wms_sp_shelf_code;
+          wms_sp_shelf_code.style.color = 'green';
+          tipParentEle.insertBefore(wms_sp_shelf_code, xiaChiEle);
 
-          let wms_sp_shelf_code = tipEles[1].cloneNode(true);
-          wms_sp_shelf_code.innerHTML =
-            '库位:' + data.wms_w_name + '<br>&ensp;&ensp;&ensp;&ensp;&ensp;' + data.wms_sp_shelf_code;
-          tipParentEle.insertBefore(wms_sp_shelf_code, tipEles[3]);
-
-          let p_onsale_time = tipEles[1].cloneNode(true);
+          let p_onsale_time = tipParentEle.lastChild.cloneNode(true);
           p_onsale_time.innerHTML = '首次在售时间:<br>' + data.p_onsale_time;
-          tipParentEle.insertBefore(p_onsale_time, tipEles[3]);
+          p_onsale_time.style.color = 'green';
+          tipParentEle.insertBefore(p_onsale_time, xiaChiEle);
         }
       }
-    }, 2000);
+    }, 1000);
   } else if (pathname.endsWith('/toonsale/view')) {
     let elements = document.getElementsByClassName('hand-style');
     if (elements.length > 0) {
@@ -225,10 +258,12 @@
     }
   } else if (pathname.endsWith('/product-editor/index')) {
     //商品刷新页
-
+    let vue2App = document.getElementById('vue2-app').__vue__;
+    vue2App.searchForm.freemask_button = 1;
     try {
       setInterval(() => {
         clickAllProducts();
+        vue2App.searchForm.freemask_button = 1; //设置不加密参数，每次搜索完会默认置为加密，这里再改回来
       }, 2000);
     } catch (error) {
       console.log(error);
@@ -253,8 +288,9 @@ async function exportProducts2Excel(vue2App, imageCount) {
     { header: 'id', key: 'id', width: 9, style: columnStyle },
     { header: 'brand-name', key: 'brand-name', width: 15, style: columnStyle },
     { header: '抖音价', key: 'dy_sale_price', width: 6, style: columnStyle }, //p_discount_price 折扣价目前无权限获取
-    // { header: '最低价', key: 'ppd_outer_lowest_price', width: 6, style: columnStyle },
     { header: '进货价', key: 'jinHuoPrice', width: 6, style: columnStyle },
+    { header: '利润', key: 'liRun', width: 6, style: columnStyle },
+    // { header: '最低价', key: 'ppd_outer_lowest_price', width: 6, style: columnStyle },
     { header: '借出状态', key: 'lend_status', width: 6, style: columnStyle },
     { header: '库位', key: 'wms_sp_shelf_code', width: 10, style: columnStyle },
     { header: '首次在售时间', key: 'p_onsale_time', width: 10, style: columnStyle },
@@ -286,8 +322,9 @@ async function exportProducts2Excel(vue2App, imageCount) {
       },
       t.brand_name + '-' + t.p_name,
       Math.floor(t.dy_sale_price),
+      t.jinHuoPrice,
+      t.liRun,
       // Math.floor(t.ppd_outer_lowest_price),
-      '****',
       t.lend_status,
       t.wms_w_name + ' ' + t.wms_sp_shelf_code,
       t.p_onsale_time,
@@ -312,16 +349,7 @@ async function exportProducts2Excel(vue2App, imageCount) {
       let column = index2 + imageStartIndex;
       vue2App.$message({
         type: 'success',
-        message:
-          '正在下载:第(' +
-          (index + 1) +
-          '/' +
-          selectedProducts.length +
-          ')个商品的(' +
-          (index2 + 1) +
-          '/' +
-          imageCount +
-          ')张图片',
+        message: '正在下载:第(' + (index + 1) + '/' + selectedProducts.length + ')个商品的(' + (index2 + 1) + '/' + imageCount + ')张图片',
       });
       // console.log(index,index2,url)
       let url = t.p_photo_urls[index2] + '?imageMogr2/thumbnail/300'; //缩放一下，否则太大了
@@ -397,9 +425,7 @@ function imageToBase64(url) {
 
 function clickAllProducts() {
   try {
-    let rows = document
-      .getElementsByClassName('el-table__body-wrapper')[0]
-      .getElementsByClassName('el-table_1_column_6 is-left');
+    let rows = document.getElementsByClassName('el-table__body-wrapper')[0].getElementsByClassName('el-table_1_column_6 is-left');
     if (rows.length <= 0) {
       return;
     }
@@ -459,6 +485,107 @@ function checkEnable() {
   return true;
 }
 
+let searchForm = {
+  pageIndex: 1,
+  pageSize: 20,
+  brand_id: '',
+  series_id: '',
+  guide_product_id: '',
+  creator: '',
+  user_id: '',
+  category_id: '',
+  id: '',
+  name: '',
+  features: '',
+  storage: '',
+  customer_type: '',
+  // hasNoRemark: 0,
+  is_out_product: '',
+  hasShelf: '',
+  seller_confirm: '',
+  is_live_single: '',
+  borrowed: '',
+  has_feature: '',
+  dispatch_type: '',
+  treatment: '',
+  cooperate_type: '',
+  adjust_type: '',
+  status: [],
+  condition_level: '',
+  provider: '',
+  photo_status_by_auditor: '',
+  current_discount_rate_from: '',
+  current_discount_rate_to: '',
+  price_from: '',
+  price_to: '',
+  discount_price_from: '',
+  discount_price_to: '',
+  discount_rate_from: '',
+  discount_rate_to: '',
+  discount_sale_from: '',
+  discount_sale_to: '',
+  purchase_price_from: '',
+  purchase_price_to: '',
+  discount_capacity_from: '',
+  discount_capacity_to: '',
+  c_s_from: '',
+  c_s_to: '',
+  create_time_from: '',
+  create_time_to: '',
+  onsale_time_from: '',
+  onsale_time_to: '',
+  sold_time_from: '',
+  sold_time_to: '',
+  settle_time_from: '',
+  settle_time_to: '',
+  rephoto_time_from: '',
+  rephoto_time_to: '',
+  photo_taker: '',
+  sortCreateTime: 'noSort',
+  onSaleTime: 'noSort',
+  sortFirst: '',
+  area_ids: [],
+  productModel: '',
+  freemask_button: 1,
+};
+function getJinHuoPrices(noJinHuoPriceDatas) {
+  if (noJinHuoPriceDatas == null) {
+    return;
+  }
+  let keys = Object.keys(noJinHuoPriceDatas);
+  if (keys.length <= 0) {
+    return;
+  }
+
+  searchForm.id = keys.join(',');
+  searchForm.pageSize = keys.length;
+  return new Promise((resolve) => {
+    try {
+      $.get('https://mis.aplum.com/mis/apis/product-editor-api/index', searchForm, (res) => {
+        if (res.code === 0) {
+          let tableData = res.data.list;
+          if (tableData == null || tableData.length <= 0) {
+            resolve('fail');
+          } else {
+            tableData.forEach((data) => {
+              try {
+                noJinHuoPriceData = noJinHuoPriceDatas[data.productId];
+                noJinHuoPriceData.jinHuoPrice = parseInt(data.productPrice.match(/进货价：(\d+)/)[1]);
+                noJinHuoPriceData.liRun = parseInt(noJinHuoPriceData.dy_sale_price) - noJinHuoPriceData.jinHuoPrice;
+              } catch (error) {
+                console.log(error);
+              }
+            });
+          }
+        }
+        resolve(res.msg);
+      });
+    } catch (error) {
+      console.log(error);
+    }
+  });
+}
+
 function tryDeleteBorrowedProduct(vue2App, pid) {
   try {
     $.ajax({
@@ -471,10 +598,7 @@ function tryDeleteBorrowedProduct(vue2App, pid) {
       success(result) {
         var parser = new DOMParser();
         var doc = parser.parseFromString(result, 'text/html');
-        let borrowid = doc
-          .getElementsByClassName('table table-striped table-bordered')[0]
-          .querySelector('tbody > tr')
-          .getAttribute('data-key');
+        let borrowid = doc.getElementsByClassName('table table-striped table-bordered')[0].querySelector('tbody > tr').getAttribute('data-key');
         if (borrowid === null) {
           console.log('tryDeleteBorrowedProduct can not find borrowid,pid =' + pid);
           return;
@@ -547,12 +671,13 @@ function getCookie(name) {
 }
 
 //异步等待元素的Visibility变为指定值
+// eslint-disable-next-line no-unused-vars
 async function waitForElementVisibility(element, timeoutInSeconds, visibility) {
   if (element === null) {
     return true;
   }
   for (let index = 0; index < timeoutInSeconds; index++) {
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve) => {
       setTimeout(resolve, 1000);
     });
     console.log('waitForSelectorVisibility index:' + index);
@@ -564,9 +689,10 @@ async function waitForElementVisibility(element, timeoutInSeconds, visibility) {
 }
 
 //异步等待元素出现
+// eslint-disable-next-line no-unused-vars
 async function waitForSelector(selector, timeoutInSeconds) {
   for (let index = 0; index < timeoutInSeconds; index++) {
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve) => {
       setTimeout(resolve, 1000);
     });
     console.log('waitForSelector index:' + index);
