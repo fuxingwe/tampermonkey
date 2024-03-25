@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.0.9
+// @version             0.1.0
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -172,8 +172,12 @@ let productsCachedStoreName = 'productsCachedStore';
             });
         });
 
+        let isRequestingPrice = false;
         //定时执行，补充商品信息，因为可能通过搜索来刷新数据
         setInterval(async () => {
+            if (isRequestingPrice) {
+                return;
+            }
             if (vue2App.cardData.length <= 0) {
                 return;
             }
@@ -229,7 +233,13 @@ let productsCachedStoreName = 'productsCachedStore';
                         type: 'warning',
                         message: '正在请求价格详情，稍等片刻显示,商品数量:' + Object.keys(noJinHuoPriceDatas).length,
                     });
+                    isRequestingPrice = true;
                     let msg = await getJinHuoPrices(noJinHuoPriceDatas);
+                    isRequestingPrice = false;
+                    vue2App.$message({
+                        type: 'warning',
+                        message: '请求价格详情，结果:' + msg,
+                    });
                     //获取到价格后缓存下来
                     for (let p_id in noJinHuoPriceDatas) {
                         let data = noJinHuoPriceDatas[p_id];
@@ -370,6 +380,15 @@ let productsCachedStoreName = 'productsCachedStore';
         let vue2App = document.getElementById('vue2-app').__vue__;
         vue2App.searchForm.user_id = 1569406692;
         vue2App.handleSearch();
+    } else if (pathname.endsWith('/live/create')) {
+        // //创建活动页
+        // let inputEles = document.getElementsByClassName('select2-search__field');
+        // if (inputEles.length != 3) {
+        //     return;
+        // }
+        // inputEles[0].setAttribute('value', '张儒崎');
+        // inputEles[1].value = '张儒崎';
+        // let vue2App = document.getElementById('vue2-app').__vue__;
     }
 })();
 
@@ -840,7 +859,7 @@ function getJinHuoPrices(noJinHuoPriceDatas) {
                 if (res.code === 0) {
                     let tableData = res.data.list;
                     if (tableData == null || tableData.length <= 0) {
-                        resolve('fail');
+                        console.log('fail');
                     } else {
                         tableData.forEach((data) => {
                             try {
