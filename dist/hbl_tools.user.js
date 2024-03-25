@@ -2,8 +2,8 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.0.8
-// @description         hbl_tools
+// @version             0.0.9
+// @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
 // @license             MIT
@@ -1000,7 +1000,7 @@ async function deleteOldCachedProducts() {
 
 function processCachedProduct(cachedProduct, product) {
     if (cachedProduct.liRun != product.liRun) {
-        cachedProductdy_sale_price = product.dy_sale_price;
+        cachedProduct.dy_sale_price = product.dy_sale_price;
         cachedProduct.liRun = product.liRun;
         cachedProduct.jinHuoPrice = product.jinHuoPrice;
         cachedProduct.cacheTimeStamp = new Date().getTime();
