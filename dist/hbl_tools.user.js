@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.1.2
+// @version             0.1.3
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -149,6 +149,9 @@ let db;
         group.insertBefore(tempBtn, exportButton1);
         tempBtn.addEventListener('click', async () => {
             await deleteOldCachedProducts(storeName);
+            if (!vue2App.checkSelectProduct()) {
+                return;
+            }
             var products = await cursorGetData(db, storeName);
             vue2App.selectedProducts.forEach((t) => {
                 if (products != null && products.some((item) => item.p_id === t.p_id)) {
@@ -644,7 +647,7 @@ async function exportProducts2Excel(vue2App, imageCount) {
     if (allProducts.length <= 0) {
         vue2App.$message({
             type: 'warn',
-            message: '缓存中没有商品，请至少选择${count}个商品，才能导出',
+            message: '缓存中没有商品，请至少选择1个商品，才能导出',
         });
         return;
     }
