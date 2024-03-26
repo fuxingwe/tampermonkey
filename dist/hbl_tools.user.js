@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.1.0
+// @version             0.1.1
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -235,24 +235,33 @@ let productsCachedStoreName = 'productsCachedStore';
                     });
                     isRequestingPrice = true;
                     let msg = await getJinHuoPrices(noJinHuoPriceDatas);
-                    isRequestingPrice = false;
+                    console.log(msg);
                     vue2App.$message({
                         type: 'warning',
                         message: '请求价格详情，结果:' + msg,
                     });
-                    //获取到价格后缓存下来
-                    for (let p_id in noJinHuoPriceDatas) {
-                        let data = noJinHuoPriceDatas[p_id];
-                        if (data.jinHuoPrice > 0) {
-                            if (p_id in cachedProductsMap) {
-                                processCachedProduct(cachedProductsMap[data.p_id], data);
-                            } else {
-                                data.cacheTimeStamp = new Date().getTime();
-                                updateDB(db, productsCachedStoreName, data);
+                    if (msg.includes('频繁')) {
+                        vue2App.$message({
+                            type: 'warning',
+                            message: '提示请求频繁，等待60S再请求:' + msg,
+                        });
+                        setTimeout(() => {
+                            isRequestingPrice = false;
+                        }, 60000);
+                    } else {
+                        //获取到价格后缓存下来
+                        for (let p_id in noJinHuoPriceDatas) {
+                            let data = noJinHuoPriceDatas[p_id];
+                            if (data.jinHuoPrice > 0) {
+                                if (p_id in cachedProductsMap) {
+                                    processCachedProduct(cachedProductsMap[data.p_id], data);
+                                } else {
+                                    data.cacheTimeStamp = new Date().getTime();
+                                    updateDB(db, productsCachedStoreName, data);
+                                }
                             }
                         }
                     }
-                    console.log(msg);
                 }
 
                 for (let i = 0; i < elements.length; i++) {
@@ -1256,4 +1265,11 @@ function deleteDBAll(dbName) {
 function closeDB(db) {
     db.close();
     console.log('数据库已关闭');
+}
+
+/**
+ * 实现sleep函数
+ */
+function sleep(time) {
+    return new Promise((resolve) => setTimeout(resolve, time));
 }
