@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.1.4
+// @version             0.1.5
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -167,7 +167,7 @@ let db;
             });
         });
 
-        let lasProductsCount = 0;
+        let lastProductsCount = 0;
         let needRequestPrice = false;
         let faSheBtnProcessed = false;
         let cachedProductsMap = {};
@@ -183,6 +183,8 @@ let db;
         while (true) {
             if (vue2App.cardData.length <= 0) {
                 console.log('waiting for cardData');
+                lastProductsCount = 0;
+                needRequestPrice = false;
                 await sleep(1000);
                 continue;
             }
@@ -208,8 +210,8 @@ let db;
 
             //获取所有商品Elements
             let elements = document.getElementsByClassName('view-shop-content')[0].getElementsByClassName('el-checkbox');
-            if (!needRequestPrice && (elements.length != vue2App.cardData.length || elements.length == lasProductsCount)) {
-                console.log('没有需要获取价格的商品，并且数量没有变化，不需要刷新，elements.length：' + elements.length);
+            if (!needRequestPrice && (elements.length != vue2App.cardData.length || (elements.length == lastProductsCount && elements[0].childElementCount >= 3))) {
+                console.log('没有需要获取价格的商品，并且数量没有变化,并且第一个商品是处理过的，不需要刷新，elements.length：' + elements.length);
                 await sleep(5000);
                 continue;
             }
@@ -233,9 +235,9 @@ let db;
                 }
             }
 
-            lasProductsCount = elements.length;
+            lastProductsCount = elements.length;
 
-            //处理每个Card的显示效果
+            //处理每个Card的显示效果,只处理一遍，获取到新价格后直接刷新价格信息即可
             for (let i = 0; i < elements.length; i++) {
                 let element = elements[i];
                 if (element.childElementCount >= 3) {
@@ -308,18 +310,30 @@ let db;
                 let xiaChiEle = tipEles[3];
                 douyinPriceEle.style.color = 'red';
                 douyinPriceEle.textContent = douyinPriceEle.textContent.replace('.00', '');
-                if (data.jinHuoPrice != undefined && data.jinHuoPrice > 0) {
-                    let jinHuoPriceEle = tipParentEle.lastChild.cloneNode(true);
-                    jinHuoPriceEle.textContent = '进货价:' + data.jinHuoPrice;
-                    jinHuoPriceEle.style.color = 'darkred';
 
-                    tipParentEle.insertBefore(jinHuoPriceEle, shiChangPriceEle);
+                let jinHuoPriceEle = tipParentEle.lastChild.cloneNode(true);
+                jinHuoPriceEle.style.color = 'darkred';
+                tipParentEle.insertBefore(jinHuoPriceEle, shiChangPriceEle);
+                if (data.jinHuoPrice != undefined && data.jinHuoPrice > 0) {
+                    jinHuoPriceEle.textContent = '进货价:' + data.jinHuoPrice;
+                } else {
+                    jinHuoPriceEle.textContent = '进货价:未获取';
+                    if (noJinHuoPriceDatas[data.p_id] != null) {
+                        //把价格对应的Ele存到数据上，方便价格获取到之后直接刷价格
+                        noJinHuoPriceDatas[data.p_id].jinHuoPriceEle = jinHuoPriceEle;
+                    }
                 }
+
+                let liRunEle = tipParentEle.lastChild.cloneNode(true);
+                liRunEle.style.color = 'red';
+                tipParentEle.insertBefore(liRunEle, shiChangPriceEle);
                 if (data.liRun != undefined) {
-                    let liRunEle = tipParentEle.lastChild.cloneNode(true);
                     liRunEle.textContent = '利润:' + data.liRun;
-                    liRunEle.style.color = 'red';
-                    tipParentEle.insertBefore(liRunEle, shiChangPriceEle);
+                } else {
+                    liRunEle.textContent = '利润:未获取';
+                    if (noJinHuoPriceDatas[data.p_id] != null) {
+                        noJinHuoPriceDatas[data.p_id].liRunEle = liRunEle;
+                    }
                 }
 
                 let ppd_outer_lowest_price = tipParentEle.lastChild.cloneNode(true);
@@ -367,16 +381,25 @@ let db;
                     //获取到价格后缓存下来，并直接进行下次循环
                     for (let p_id in noJinHuoPriceDatas) {
                         let data = noJinHuoPriceDatas[p_id];
-                        if (data.jinHuoPrice > 0) {
-                            if (p_id in cachedProductsMap) {
-                                processCachedProduct(cachedProductsMap[data.p_id], data);
+                        try {
+                            if (data.jinHuoPrice > 0) {
+                                data.jinHuoPriceEle.textContent = '进货价:' + data.jinHuoPrice;
+                                data.jinHuoPriceEle = null;
+                                data.liRunEle.textContent = '利润:' + data.liRun;
+                                data.liRunEle = null;
+                                if (p_id in cachedProductsMap) {
+                                    processCachedProduct(cachedProductsMap[data.p_id], data);
+                                } else {
+                                    data.cacheTimeStamp = new Date().getTime();
+                                    cachedProductsMap[data.p_id] = data;
+                                    updateDB(db, productsCachedStoreName, data);
+                                }
                             } else {
-                                data.cacheTimeStamp = new Date().getTime();
-                                cachedProductsMap[data.p_id] = data;
-                                updateDB(db, productsCachedStoreName, data);
+                                needRequestPrice = true;
                             }
-                        } else {
+                        } catch (error) {
                             needRequestPrice = true;
+                            console.log(error);
                         }
                     }
                 }
