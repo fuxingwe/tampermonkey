@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.1.1
+// @version             0.1.2
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -21,31 +21,24 @@
 
 let dbName = 'productsDB';
 let storeName = 'productsSelectedStore';
-let db;
 let productsCachedStoreName = 'productsCachedStore';
+let db;
 
 (async function () {
-    console.log('fengxing');
+    console.log('hbl_tools start');
     let enable = checkEnable();
     if (!enable) {
         console.log('checkEnable is false');
         return;
     }
     let pathname = location.pathname;
-    let faSheBtnProcessed = false;
     console.log(pathname);
     processBorrowTip();
 
-    if (pathname.endsWith('/mis/product/view')) {
-        //商品详情页
-        tryClickPriceEle(document.getElementById('in_price_mask'));
-        tryClickPriceEle(document.getElementById('seller_user_masked'));
-        tryClickPriceEle(document.getElementById('pangu_guide_price_mask'));
-    } else if (pathname.endsWith('/activity-new/view-douyin-live')) {
+    if (pathname.endsWith('/activity-new/view-douyin-live')) {
         let vue2App = document.getElementById('vue2-app').__vue__;
+        //处理底部按钮，并设置为自适应换行
         let group = document.getElementsByClassName('view-shop-footer')[0];
-
-        //设置为自适应换行
         group.style.justifyContent = 'flex-start';
         group.style.display = 'flex';
         group.style.flexWrap = 'wrap';
@@ -135,54 +128,62 @@ let productsCachedStoreName = 'productsCachedStore';
         exportButton.addEventListener('click', async () => {
             await exportProducts2Excel(vue2App, 7);
         });
-
         //活动页indexDB相关操作，处理缓存逻辑
-        openDB(dbName, 1).then(async function (result) {
-            db = result;
-            console.log('openDB success:' + dbName);
-            await deleteOldCachedProducts();
+        db = await openDB(dbName, 1);
+        console.log('openDB success:' + dbName);
+        await deleteOldCachedProducts(productsCachedStoreName);
 
-            let tempBtn = btn.cloneNode(true);
-            tempBtn.textContent = '清空缓存';
-            group.insertBefore(tempBtn, exportButton1);
-            tempBtn.addEventListener('click', async () => {
-                await deleteDBStore(db, storeName);
-                vue2App.$message({
-                    type: 'success',
-                    message: '清空缓存成功',
-                });
-            });
-
-            tempBtn = btn.cloneNode(true);
-            tempBtn.textContent = '存入缓存';
-            group.insertBefore(tempBtn, exportButton1);
-            tempBtn.addEventListener('click', async () => {
-                var products = await cursorGetData(db, storeName);
-                vue2App.selectedProducts.forEach((t) => {
-                    if (products != null && products.some((item) => item.p_id === t.p_id)) {
-                        console.log('缓存中已有该商品，跳过' + t.p_id);
-                    } else {
-                        updateDB(db, storeName, t);
-                    }
-                });
-                vue2App.$message({
-                    type: 'success',
-                    message: '存入缓存成功:' + vue2App.selectedProducts.map((t) => t.p_id).join(','),
-                });
+        let tempBtn = btn.cloneNode(true);
+        tempBtn.textContent = '清空缓存';
+        group.insertBefore(tempBtn, exportButton1);
+        tempBtn.addEventListener('click', async () => {
+            await deleteDBStore(db, storeName);
+            vue2App.$message({
+                type: 'success',
+                message: '清空缓存成功',
             });
         });
 
-        let isRequestingPrice = false;
+        tempBtn = btn.cloneNode(true);
+        tempBtn.textContent = '存入缓存';
+        group.insertBefore(tempBtn, exportButton1);
+        tempBtn.addEventListener('click', async () => {
+            await deleteOldCachedProducts(storeName);
+            var products = await cursorGetData(db, storeName);
+            vue2App.selectedProducts.forEach((t) => {
+                if (products != null && products.some((item) => item.p_id === t.p_id)) {
+                    console.log('缓存中已有该商品，跳过' + t.p_id);
+                } else {
+                    t.cacheTimeStamp = new Date().getTime();
+                    updateDB(db, storeName, t);
+                }
+            });
+            vue2App.$message({
+                type: 'success',
+                message: '存入缓存成功:' + vue2App.selectedProducts.map((t) => t.p_id).join(','),
+            });
+        });
+
+        let lasProductsCount = 0;
+        let needRequestPrice = false;
+        let faSheBtnProcessed = false;
+        let cachedProductsMap = {};
+        //获取缓存数据
+        var products = await cursorGetData(db, productsCachedStoreName);
+        for (let index = 0; index < products?.length; index++) {
+            let t = products[index];
+            cachedProductsMap[t.p_id] = t;
+        }
         //定时执行，补充商品信息，因为可能通过搜索来刷新数据
-        setInterval(async () => {
-            if (isRequestingPrice) {
-                return;
-            }
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
             if (vue2App.cardData.length <= 0) {
-                return;
+                console.log('waiting for cardData');
+                await sleep(1000);
+                continue;
             }
 
-            //发射按钮点击后自动处理增加导入按钮(刷出来的晚，所以放在setInterval里)
+            //发射按钮处理，发射按钮点击后也自动处理增加导入按钮(刷出来的晚，所以放在循环里),只处理一次
             if (!faSheBtnProcessed && group.childElementCount > 3) {
                 Array.from(group.children).forEach((t) => {
                     if (t.textContent == '发射') {
@@ -201,171 +202,187 @@ let productsCachedStoreName = 'productsCachedStore';
                 });
             }
 
+            //获取所有商品Elements
             let elements = document.getElementsByClassName('view-shop-content')[0].getElementsByClassName('el-checkbox');
+            if (!needRequestPrice && (elements.length != vue2App.cardData.length || elements.length == lasProductsCount)) {
+                console.log('没有需要获取价格的商品，并且数量没有变化，不需要刷新，elements.length：' + elements.length);
+                await sleep(3000);
+                continue;
+            }
 
-            if (elements.length == vue2App.cardData.length) {
-                //获取缓存数据
-                var products = await cursorGetData(db, productsCachedStoreName);
-                let cachedProductsMap = {};
-                for (let index = 0; index < products?.length; index++) {
-                    let t = products[index];
-                    cachedProductsMap[t.p_id] = t;
-                }
-
-                let noJinHuoPriceDatas = {};
-                for (let i = 0; i < vue2App.cardData.length; i++) {
-                    let data = vue2App.cardData[i];
+            //获取没有进货价的商品列表，缓存中已有的则赋值过来并重算利润
+            let noJinHuoPriceDatas = {};
+            for (let i = 0; i < vue2App.cardData.length; i++) {
+                let data = vue2App.cardData[i];
+                if (data.jinHuoPrice == undefined || data.jinHuoPrice === 0) {
+                    if (data.p_id in cachedProductsMap) {
+                        data.jinHuoPrice = cachedProductsMap[data.p_id].jinHuoPrice;
+                    }
                     if (data.jinHuoPrice == undefined || data.jinHuoPrice === 0) {
-                        if (data.p_id in cachedProductsMap) {
-                            data.jinHuoPrice = cachedProductsMap[data.p_id].jinHuoPrice;
-                        }
-                        if (data.jinHuoPrice == undefined || data.jinHuoPrice === 0) {
-                            noJinHuoPriceDatas[data.p_id] = data;
-                        } else {
-                            //更新一下利润，因为dy_sale_price可能有调整
-                            data.liRun = parseInt(data.dy_sale_price) - data.jinHuoPrice;
-                            processCachedProduct(cachedProductsMap[data.p_id], data);
-                        }
-                    }
-                }
-                if (Object.keys(noJinHuoPriceDatas).length > 0) {
-                    vue2App.$message({
-                        type: 'warning',
-                        message: '正在请求价格详情，稍等片刻显示,商品数量:' + Object.keys(noJinHuoPriceDatas).length,
-                    });
-                    isRequestingPrice = true;
-                    let msg = await getJinHuoPrices(noJinHuoPriceDatas);
-                    console.log(msg);
-                    vue2App.$message({
-                        type: 'warning',
-                        message: '请求价格详情，结果:' + msg,
-                    });
-                    if (msg.includes('频繁')) {
-                        vue2App.$message({
-                            type: 'warning',
-                            message: '提示请求频繁，等待60S再请求:' + msg,
-                        });
-                        setTimeout(() => {
-                            isRequestingPrice = false;
-                        }, 60000);
+                        noJinHuoPriceDatas[data.p_id] = data;
+                        needRequestPrice = true;
                     } else {
-                        //获取到价格后缓存下来
-                        for (let p_id in noJinHuoPriceDatas) {
-                            let data = noJinHuoPriceDatas[p_id];
-                            if (data.jinHuoPrice > 0) {
-                                if (p_id in cachedProductsMap) {
-                                    processCachedProduct(cachedProductsMap[data.p_id], data);
-                                } else {
-                                    data.cacheTimeStamp = new Date().getTime();
-                                    updateDB(db, productsCachedStoreName, data);
-                                }
-                            }
-                        }
+                        //更新一下利润，因为dy_sale_price可能有调整
+                        data.liRun = parseInt(data.dy_sale_price) - data.jinHuoPrice;
+                        processCachedProduct(cachedProductsMap[data.p_id], data);
                     }
-                }
-
-                for (let i = 0; i < elements.length; i++) {
-                    let element = elements[i];
-                    if (element.childElementCount >= 3) {
-                        continue;
-                    }
-
-                    let data = vue2App.cardData[i];
-                    //取消平台自采的鼠标提示，影响勾选ID
-                    let tipEle = element.nextElementSibling.getElementsByClassName('el-tooltip')[0];
-                    let newTipEle = tipEle.cloneNode(true);
-                    tipEle.parentElement.insertBefore(newTipEle, tipEle);
-                    tipEle.remove();
-
-                    //借出状态
-                    let node = element.lastElementChild.cloneNode(false);
-                    node.innerHTML = '&ensp;&ensp;' + data.lend_status;
-                    element.appendChild(node);
-
-                    if (data.enable_delete == 0) {
-                        //没有删除按钮的添加删除按钮
-                        let btn = document.createElement('button');
-                        btn.textContent = '取消借出并删除';
-                        btn.className = 'el-button el-button--primary el-button--mini';
-                        btn.style.background = 'green';
-                        btn.style.color = 'white';
-                        element.parentElement.getElementsByClassName('el-row')[0].appendChild(btn);
-
-                        btn.addEventListener('click', () => {
-                            vue2App
-                                .$confirm('确认要删除商品吗?', '提示', {
-                                    confirmButtonText: '确定',
-                                    cancelButtonText: '取消',
-                                    type: 'warning',
-                                })
-                                .then(() => {
-                                    tryDeleteBorrowedProduct(vue2App, data.p_id);
-                                    //延迟调用活动页删除
-                                    setTimeout(() => {
-                                        vue2App
-                                            .ajax('get', '/mis/activity/delete-product', {
-                                                ids: [data.id],
-                                            })
-                                            .then((res) => {
-                                                if (res.success) {
-                                                    vue2App.$message({
-                                                        type: 'success',
-                                                        message: '删除成功',
-                                                    });
-                                                    vue2App.updateCardData();
-                                                } else {
-                                                    vue2App.$message({
-                                                        type: 'error',
-                                                        message: res.message,
-                                                    });
-                                                }
-                                            });
-                                    }, 2000);
-                                });
-                        });
-                    }
-
-                    //补充额外价格等信息
-                    let tipParentEle = element.nextElementSibling.nextElementSibling.nextElementSibling.nextElementSibling;
-                    let tipEles = tipParentEle.getElementsByClassName('el-tooltip');
-                    if (tipEles.length >= 9) {
-                        continue;
-                    }
-                    let douyinPriceEle = tipEles[0];
-                    let shiChangPriceEle = tipEles[1];
-                    let xiaChiEle = tipEles[3];
-                    douyinPriceEle.style.color = 'red';
-                    douyinPriceEle.textContent = douyinPriceEle.textContent.replace('.00', '');
-                    if (data.jinHuoPrice != undefined && data.jinHuoPrice > 0) {
-                        let jinHuoPriceEle = tipParentEle.lastChild.cloneNode(true);
-                        jinHuoPriceEle.textContent = '进货价:' + data.jinHuoPrice;
-                        jinHuoPriceEle.style.color = 'darkred';
-
-                        tipParentEle.insertBefore(jinHuoPriceEle, shiChangPriceEle);
-                    }
-                    if (data.liRun != undefined) {
-                        let liRunEle = tipParentEle.lastChild.cloneNode(true);
-                        liRunEle.textContent = '利润:' + data.liRun;
-                        liRunEle.style.color = 'red';
-                        tipParentEle.insertBefore(liRunEle, shiChangPriceEle);
-                    }
-
-                    let ppd_outer_lowest_price = tipParentEle.lastChild.cloneNode(true);
-                    ppd_outer_lowest_price.textContent = '最低销售价:' + data.ppd_outer_lowest_price;
-                    tipParentEle.insertBefore(ppd_outer_lowest_price, shiChangPriceEle);
-                    let wms_sp_shelf_code = tipParentEle.lastChild.cloneNode(true);
-                    wms_sp_shelf_code.innerHTML = '库位:' + data.wms_w_name + '<br>&ensp;&ensp;&ensp;&ensp;&ensp;' + data.wms_sp_shelf_code;
-                    wms_sp_shelf_code.style.color = 'green';
-                    tipParentEle.insertBefore(wms_sp_shelf_code, xiaChiEle);
-
-                    let p_onsale_time = tipParentEle.lastChild.cloneNode(true);
-                    p_onsale_time.innerHTML = '首次在售时间:<br>' + data.p_onsale_time;
-                    p_onsale_time.style.color = 'green';
-                    tipParentEle.insertBefore(p_onsale_time, xiaChiEle);
                 }
             }
-        }, 1000);
+
+            lasProductsCount = elements.length;
+
+            //处理每个Card的显示效果
+            for (let i = 0; i < elements.length; i++) {
+                let element = elements[i];
+                if (element.childElementCount >= 3) {
+                    continue;
+                }
+
+                let data = vue2App.cardData[i];
+                //取消平台自采的鼠标提示，影响勾选ID
+                let tipEle = element.nextElementSibling.getElementsByClassName('el-tooltip')[0];
+                let newTipEle = tipEle.cloneNode(true);
+                tipEle.parentElement.insertBefore(newTipEle, tipEle);
+                tipEle.remove();
+
+                //借出状态
+                let node = element.lastElementChild.cloneNode(false);
+                node.innerHTML = '&ensp;&ensp;' + data.lend_status;
+                element.appendChild(node);
+
+                if (data.enable_delete == 0) {
+                    //没有删除按钮的添加删除按钮
+                    let btn = document.createElement('button');
+                    btn.textContent = '取消借出并删除';
+                    btn.className = 'el-button el-button--primary el-button--mini';
+                    btn.style.background = 'green';
+                    btn.style.color = 'white';
+                    element.parentElement.getElementsByClassName('el-row')[0].appendChild(btn);
+
+                    btn.addEventListener('click', () => {
+                        vue2App
+                            .$confirm('确认要删除商品吗?', '提示', {
+                                confirmButtonText: '确定',
+                                cancelButtonText: '取消',
+                                type: 'warning',
+                            })
+                            .then(() => {
+                                tryDeleteBorrowedProduct(vue2App, data.p_id);
+                                //延迟调用活动页删除
+                                setTimeout(() => {
+                                    vue2App
+                                        .ajax('get', '/mis/activity/delete-product', {
+                                            ids: [data.id],
+                                        })
+                                        .then((res) => {
+                                            if (res.success) {
+                                                vue2App.$message({
+                                                    type: 'success',
+                                                    message: '删除成功',
+                                                });
+                                                vue2App.updateCardData();
+                                            } else {
+                                                vue2App.$message({
+                                                    type: 'error',
+                                                    message: res.message,
+                                                });
+                                            }
+                                        });
+                                }, 2000);
+                            });
+                    });
+                }
+
+                //补充额外价格等信息
+                let tipParentEle = element.nextElementSibling.nextElementSibling.nextElementSibling.nextElementSibling;
+                let tipEles = tipParentEle.getElementsByClassName('el-tooltip');
+                if (tipEles.length >= 9) {
+                    continue;
+                }
+                let douyinPriceEle = tipEles[0];
+                let shiChangPriceEle = tipEles[1];
+                let xiaChiEle = tipEles[3];
+                douyinPriceEle.style.color = 'red';
+                douyinPriceEle.textContent = douyinPriceEle.textContent.replace('.00', '');
+                if (data.jinHuoPrice != undefined && data.jinHuoPrice > 0) {
+                    let jinHuoPriceEle = tipParentEle.lastChild.cloneNode(true);
+                    jinHuoPriceEle.textContent = '进货价:' + data.jinHuoPrice;
+                    jinHuoPriceEle.style.color = 'darkred';
+
+                    tipParentEle.insertBefore(jinHuoPriceEle, shiChangPriceEle);
+                }
+                if (data.liRun != undefined) {
+                    let liRunEle = tipParentEle.lastChild.cloneNode(true);
+                    liRunEle.textContent = '利润:' + data.liRun;
+                    liRunEle.style.color = 'red';
+                    tipParentEle.insertBefore(liRunEle, shiChangPriceEle);
+                }
+
+                let ppd_outer_lowest_price = tipParentEle.lastChild.cloneNode(true);
+                ppd_outer_lowest_price.textContent = '最低销售价:' + data.ppd_outer_lowest_price;
+                tipParentEle.insertBefore(ppd_outer_lowest_price, shiChangPriceEle);
+                let wms_sp_shelf_code = tipParentEle.lastChild.cloneNode(true);
+                wms_sp_shelf_code.innerHTML = '库位:' + data.wms_w_name + '<br>&ensp;&ensp;&ensp;&ensp;&ensp;' + data.wms_sp_shelf_code;
+                wms_sp_shelf_code.style.color = 'green';
+                tipParentEle.insertBefore(wms_sp_shelf_code, xiaChiEle);
+
+                let p_onsale_time = tipParentEle.lastChild.cloneNode(true);
+                p_onsale_time.innerHTML = '首次在售时间:<br>' + data.p_onsale_time;
+                p_onsale_time.style.color = 'green';
+                tipParentEle.insertBefore(p_onsale_time, xiaChiEle);
+            }
+
+            if (!needRequestPrice) {
+                console.log('都有价格，不需要获取价格，等待一会再刷新检测是否有新的商品需要处理（可能搜索了）');
+                await sleep(3000);
+                continue;
+            }
+
+            //没有价格信息的去请求，下次循环会刷上
+            {
+                vue2App.$message({
+                    type: 'warning',
+                    message: '有商品需要请求价格详情，稍等片刻显示,数量:' + Object.keys(noJinHuoPriceDatas).length,
+                });
+                let msg = await getJinHuoPrices(noJinHuoPriceDatas);
+                console.log(msg);
+                vue2App.$message({
+                    type: 'warning',
+                    message: '请求价格详情，结果:' + msg,
+                });
+                if (msg.includes('频繁')) {
+                    vue2App.$message({
+                        type: 'error',
+                        message: '提示请求频繁，60S之后再请求价格信息:' + msg,
+                    });
+                    await sleep(60000);
+                } else {
+                    needRequestPrice = false;
+                    //获取到价格后缓存下来，并直接进行下次循环
+                    for (let p_id in noJinHuoPriceDatas) {
+                        let data = noJinHuoPriceDatas[p_id];
+                        if (data.jinHuoPrice > 0) {
+                            if (p_id in cachedProductsMap) {
+                                processCachedProduct(cachedProductsMap[data.p_id], data);
+                            } else {
+                                data.cacheTimeStamp = new Date().getTime();
+                                cachedProductsMap[data.p_id] = data;
+                                updateDB(db, productsCachedStoreName, data);
+                            }
+                        } else {
+                            needRequestPrice = true;
+                        }
+                    }
+                }
+            }
+        }
+    } else if (pathname.endsWith('/mis/product/view')) {
+        //商品详情页
+        tryClickPriceEle(document.getElementById('in_price_mask'));
+        tryClickPriceEle(document.getElementById('seller_user_masked'));
+        tryClickPriceEle(document.getElementById('pangu_guide_price_mask'));
     } else if (pathname.endsWith('/toonsale/view')) {
+        //批次页
         let elements = document.getElementsByClassName('hand-style');
         if (elements.length > 0) {
             for (let i = 0; i < elements.length; i++) {
@@ -853,14 +870,17 @@ let searchForm = {
 };
 function getJinHuoPrices(noJinHuoPriceDatas) {
     if (noJinHuoPriceDatas == null) {
+        resolve('noJinHuoPriceDatas is null');
         return;
     }
     let keys = Object.keys(noJinHuoPriceDatas);
     if (keys.length <= 0) {
+        resolve('noJinHuoPriceDatas count is 0');
         return;
     }
 
     searchForm.id = keys.join(',');
+    console.log('getJinHuoPrices:' + searchForm.id);
     searchForm.pageSize = keys.length;
     return new Promise((resolve) => {
         try {
@@ -884,7 +904,7 @@ function getJinHuoPrices(noJinHuoPriceDatas) {
                 resolve(res.msg);
             });
         } catch (error) {
-            console.log(error);
+            resolve(error);
         }
     });
 }
@@ -1007,9 +1027,9 @@ async function waitForSelector(selector, timeoutInSeconds) {
 }
 
 //数据库indexedDB相关操作封装
-async function deleteOldCachedProducts() {
+async function deleteOldCachedProducts(storeName) {
     try {
-        var products = await cursorGetData(db, productsCachedStoreName);
+        var products = await cursorGetData(db, storeName);
         let deletePids = [];
         let expireTimeStamp = new Date().getTime() - 1000 * 60 * 60 * 24 * 30;
         for (let index = 0; index < products?.length; index++) {
@@ -1019,7 +1039,7 @@ async function deleteOldCachedProducts() {
             }
         }
         deletePids.forEach((pid) => {
-            deleteDB(db, productsCachedStoreName, pid);
+            deleteDB(db, storeName, pid);
         });
     } catch (error) {
         console.log(error);
