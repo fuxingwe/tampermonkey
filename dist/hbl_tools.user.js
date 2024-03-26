@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.1.3
+// @version             0.1.4
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -171,6 +171,7 @@ let db;
         let needRequestPrice = false;
         let faSheBtnProcessed = false;
         let cachedProductsMap = {};
+        let pinFanCount = 0;
         //获取缓存数据
         var products = await cursorGetData(db, productsCachedStoreName);
         for (let index = 0; index < products?.length; index++) {
@@ -209,7 +210,7 @@ let db;
             let elements = document.getElementsByClassName('view-shop-content')[0].getElementsByClassName('el-checkbox');
             if (!needRequestPrice && (elements.length != vue2App.cardData.length || elements.length == lasProductsCount)) {
                 console.log('没有需要获取价格的商品，并且数量没有变化，不需要刷新，elements.length：' + elements.length);
-                await sleep(3000);
+                await sleep(5000);
                 continue;
             }
 
@@ -358,8 +359,10 @@ let db;
                         type: 'error',
                         message: '提示请求频繁，60S之后再请求价格信息:' + msg,
                     });
-                    await sleep(60000);
+                    pinFanCount += 1;
+                    await sleep(60000 * pinFanCount);
                 } else {
+                    pinFanCount = 0;
                     needRequestPrice = false;
                     //获取到价格后缓存下来，并直接进行下次循环
                     for (let p_id in noJinHuoPriceDatas) {
