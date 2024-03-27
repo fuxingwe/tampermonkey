@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://github.com/fengxing/fbl_tools
-// @version             0.1.5
+// @version             0.1.7
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -181,7 +181,7 @@ let db;
         //定时执行，补充商品信息，因为可能通过搜索来刷新数据
         // eslint-disable-next-line no-constant-condition
         while (true) {
-            if (vue2App.cardData.length <= 0) {
+            if (vue2App == null || vue2App.cardData == null || vue2App.cardData.length <= 0) {
                 console.log('waiting for cardData');
                 lastProductsCount = 0;
                 needRequestPrice = false;
@@ -436,14 +436,73 @@ let db;
         vue2App.searchForm.user_id = 1569406692;
         vue2App.handleSearch();
     } else if (pathname.endsWith('/live/create')) {
-        // //创建活动页
-        // let inputEles = document.getElementsByClassName('select2-search__field');
-        // if (inputEles.length != 3) {
-        //     return;
-        // }
-        // inputEles[0].setAttribute('value', '张儒崎');
-        // inputEles[1].value = '张儒崎';
-        // let vue2App = document.getElementById('vue2-app').__vue__;
+        //创建活动页
+        let ele = document.getElementById('tliveroom-anchor_list');
+        ele.value = '1569406692';
+        ele.dispatchEvent(new Event('change'));
+
+        ele = document.getElementById('tliveroom-effective_anchor_list');
+        ele.value = '1569406692';
+        ele.dispatchEvent(new Event('change'));
+
+        ele = document.getElementById('tliveroom-assistant_list');
+        ele.value = '2218';
+        ele.dispatchEvent(new Event('change'));
+
+        ele = document.getElementById('tliveroom-room_name');
+        const daysLater = new Date(new Date().getTime() + 2 * 24 * 60 * 60 * 1000);
+        const year = daysLater.getFullYear();
+        const month = (daysLater.getMonth() + 1).toString().padStart(2, '0');
+        const day = daysLater.getDate().toString().padStart(2, '0');
+        ele.value = `${year}${month}${day}抖C7号`;
+        ele.dispatchEvent(new Event('input'));
+
+        ele = document.getElementById('tliveroom-live_type');
+        ele.value = 'dytalent';
+        ele.dispatchEvent(new Event('change'));
+
+        ele = document.getElementById('tliveroom-is_dou_yin_stock');
+        ele.value = '1';
+        ele.dispatchEvent(new Event('change'));
+
+        // ele = document.getElementById('tliveroom-offshelf_time');
+        // ele.value = '24';
+        // ele.dispatchEvent(new Event('input'));
+
+        ele = document.getElementById('tliveroom-location');
+        ele.value = '内场_环普6';
+        ele.dispatchEvent(new Event('change'));
+
+        ele = document.getElementById('liveroomposition');
+        ele.value = '北京';
+        ele.dispatchEvent(new Event('change'));
+
+        setTimeout(() => {
+            //刚刷出来时设置失败，需要等一会再设置
+            ele = document.getElementById('tliveroom-douyin_account');
+            ele.value = '7号 红布林包多多';
+            ele.dispatchEvent(new Event('change'));
+        }, 1000);
+        setTimeout(() => {
+            //刚刷出来时设置失败，需要等一会再设置，多来一重保险
+            ele = document.getElementById('tliveroom-douyin_account');
+            ele.value = '7号 红布林包多多';
+            ele.dispatchEvent(new Event('change'));
+        }, 3000);
+
+        ele = document.getElementById('tliveroom-starttime');
+        ele.value = `${year}-${month}-${day} 18:00:00`;
+        ele.dispatchEvent(new Event('input'));
+
+        ele = document.getElementById('tliveroom-endtime');
+        const daysLater2 = new Date(daysLater.getTime() + 24 * 60 * 60 * 1000);
+        const year2 = daysLater2.getFullYear();
+        const month2 = (daysLater2.getMonth() + 1).toString().padStart(2, '0');
+        const day2 = daysLater2.getDate().toString().padStart(2, '0');
+        ele.value = `${year2}-${month2}-${day2} 3:00:00`;
+        ele.dispatchEvent(new Event('input'));
+
+        Toast('自动填写成功，时间默认为2天后，可自行修改直播间名称中的日期，开始时间，结束时间', 100000);
     }
 })();
 
@@ -754,23 +813,26 @@ function imageToBase64(url) {
     });
 }
 
-// function Toast(msg,duration){
-//     try {
-//         duration=isNaN(duration)?3000:duration;
-//         var m = document.createElement('div');
-//         m.innerHTML = msg;
-//         m.style.cssText="max-width:60%;min-width: 150px;padding:0 14px;height: 40px;color: rgb(255, 255, 255);line-height: 40px;text-align: center;border-radius: 4px;position: fixed;top: 50%;left: 50%;transform: translate(-50%, -50%);z-index: 9999999999;background: rgba(0, 0, 0,.7);font-size: 16px;";
-//         document.body.appendChild(m);
-//         setTimeout(function() {
-//           var d = 0.5;
-//           m.style.webkitTransition = '-webkit-transform ' + d + 's ease-in, opacity ' + d + 's ease-in';
-//           m.style.opacity = '0';
-//           setTimeout(function() { document.body.removeChild(m) }, d * 1000);
-//         }, duration);
-//     } catch (error) {
-//         console.log(error)
-//     }
-// }
+function Toast(msg, duration) {
+    try {
+        duration = isNaN(duration) ? 5000 : duration;
+        var m = document.createElement('div');
+        m.innerHTML = msg;
+        m.style.cssText =
+            'max-width:60%;min-width: 150px;padding:0 14px;height: 40px;color: rgb(255, 255, 255);line-height: 40px;text-align: center;border-radius: 4px;position: fixed;top: 50%;left: 50%;transform: translate(-50%, -50%);z-index: 9999999999;background: rgba(0, 0, 0,.7);font-size: 16px;';
+        document.body.appendChild(m);
+        setTimeout(function () {
+            var d = 0.5;
+            m.style.webkitTransition = '-webkit-transform ' + d + 's ease-in, opacity ' + d + 's ease-in';
+            m.style.opacity = '0';
+            setTimeout(function () {
+                document.body.removeChild(m);
+            }, d * 1000);
+        }, duration);
+    } catch (error) {
+        console.log(error);
+    }
+}
 
 function clickAllProducts() {
     try {
