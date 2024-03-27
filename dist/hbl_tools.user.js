@@ -131,7 +131,7 @@ let db;
         //活动页indexDB相关操作，处理缓存逻辑
         db = await openDB(dbName, 1);
         console.log('openDB success:' + dbName);
-        await deleteOldCachedProducts(productsCachedStoreName);
+        await deleteOldCachedProducts(productsCachedStoreName, 1000 * 60 * 60 * 24 * 30);
 
         let tempBtn = btn.cloneNode(true);
         tempBtn.textContent = '清空缓存';
@@ -148,7 +148,7 @@ let db;
         tempBtn.textContent = '存入缓存';
         group.insertBefore(tempBtn, exportButton1);
         tempBtn.addEventListener('click', async () => {
-            await deleteOldCachedProducts(storeName);
+            await deleteOldCachedProducts(storeName, 1000 * 60 * 60 * 24);
             if (!vue2App.checkSelectProduct()) {
                 return;
             }
@@ -1056,11 +1056,11 @@ async function waitForSelector(selector, timeoutInSeconds) {
 }
 
 //数据库indexedDB相关操作封装
-async function deleteOldCachedProducts(storeName) {
+async function deleteOldCachedProducts(storeName, cacheMilliSeconds) {
     try {
         var products = await cursorGetData(db, storeName);
         let deletePids = [];
-        let expireTimeStamp = new Date().getTime() - 1000 * 60 * 60 * 24 * 30;
+        let expireTimeStamp = new Date().getTime() - cacheMilliSeconds;
         for (let index = 0; index < products?.length; index++) {
             let t = products[index];
             if ('cacheTimeStamp' in t && expireTimeStamp > t['cacheTimeStamp']) {
