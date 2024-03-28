@@ -371,10 +371,10 @@ let db;
                 if (msg.includes('频繁')) {
                     vue2App.$message({
                         type: 'error',
-                        message: '提示请求频繁，60S之后再请求价格信息:' + msg,
+                        message: '提示请求频繁，2分钟之后再请求价格信息:' + msg,
                     });
                     pinFanCount += 1;
-                    await sleep(60000 * pinFanCount);
+                    await sleep(120000 * pinFanCount);
                 } else {
                     pinFanCount = 0;
                     needRequestPrice = false;
