@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.1.8
+// @version             0.1.9
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -171,7 +171,7 @@ let db;
         let needRequestPrice = false;
         let faSheBtnProcessed = false;
         let cachedProductsMap = {};
-        let pinFanCount = 0;
+        let failCount = 0;
         //获取缓存数据
         var products = await cursorGetData(db, productsCachedStoreName);
         for (let index = 0; index < products?.length; index++) {
@@ -365,14 +365,14 @@ let db;
                 let msg = await getJinHuoPrices(noJinHuoPriceDatas);
 
                 if (msg.includes('频繁')) {
-                    pinFanCount += 1;
-                    let tipMsg = `提示请求频繁，${pinFanCount}分钟之后再请求价格信息:${msg}`;
+                    failCount += 1;
+                    let tipMsg = `提示请求频繁，${failCount * 2}分钟之后再请求价格信息:${msg}`;
                     console.log(tipMsg);
                     vue2App.$message({
                         type: 'error',
                         message: tipMsg,
                     });
-                    await sleep(60000 * pinFanCount);
+                    await sleep(120000 * failCount);
                 } else {
                     let tipMsg = '请求价格详情，结果:' + msg;
                     console.log(tipMsg);
@@ -380,7 +380,6 @@ let db;
                         type: 'warning',
                         message: tipMsg,
                     });
-                    pinFanCount = 0;
                     needRequestPrice = false;
                     //获取到价格后缓存下来，并直接进行下次循环
                     for (let p_id in noJinHuoPriceDatas) {
@@ -406,6 +405,18 @@ let db;
                             console.log(error);
                         }
                     }
+                    if (needRequestPrice) {
+                        failCount += 1;
+                    } else {
+                        failCount = 0;
+                    }
+                    tipMsg = `请求失败，还有价格没获取成功，${failCount}分钟之后再请求价格信息:${msg}`;
+                    console.log(tipMsg);
+                    vue2App.$message({
+                        type: 'error',
+                        message: tipMsg,
+                    });
+                    await sleep(60000 * failCount);
                 }
             }
         }
