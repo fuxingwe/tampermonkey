@@ -1,7 +1,7 @@
 /* eslint-disable no-undef */
 // ==UserScript==
 // @name                hbl_tools
-// @namespace           https://github.com/fengxing/fbl_tools
+// @namespace           https://fengxing.hbl.com/
 // @version             0.1.7
 // @description         hbl_tools useful
 // @author              fengxing
@@ -502,7 +502,7 @@ let db;
         ele.value = `${year2}-${month2}-${day2} 3:00:00`;
         ele.dispatchEvent(new Event('input'));
 
-        Toast('自动填写成功，时间默认为2天后，可自行修改直播间名称中的日期，开始时间，结束时间', 100000);
+        Toast('自动填写成功，时间默认填的2天后，请检查并修改时间（包括直播间名称中的时间、开始时间、结束时间）', 100000);
     }
 })();
 
