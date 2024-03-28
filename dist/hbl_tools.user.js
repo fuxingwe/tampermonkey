@@ -363,19 +363,23 @@ let db;
                     message: '有商品需要请求价格详情，稍等片刻显示,数量:' + Object.keys(noJinHuoPriceDatas).length,
                 });
                 let msg = await getJinHuoPrices(noJinHuoPriceDatas);
-                console.log(msg);
-                vue2App.$message({
-                    type: 'warning',
-                    message: '请求价格详情，结果:' + msg,
-                });
+
                 if (msg.includes('频繁')) {
+                    pinFanCount += 1;
+                    let tipMsg = `提示请求频繁，${pinFanCount}分钟之后再请求价格信息:${msg}`;
+                    console.log(tipMsg);
                     vue2App.$message({
                         type: 'error',
-                        message: '提示请求频繁，2分钟之后再请求价格信息:' + msg,
+                        message: tipMsg,
                     });
-                    pinFanCount += 1;
-                    await sleep(120000 * pinFanCount);
+                    await sleep(60000 * pinFanCount);
                 } else {
+                    let tipMsg = '请求价格详情，结果:' + msg;
+                    console.log(tipMsg);
+                    vue2App.$message({
+                        type: 'warning',
+                        message: tipMsg,
+                    });
                     pinFanCount = 0;
                     needRequestPrice = false;
                     //获取到价格后缓存下来，并直接进行下次循环
