@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.2.1
+// @version             0.2.2
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -24,6 +24,7 @@ let storeName = 'productsSelectedStore';
 let productEditorStoreName = 'productEditorStoreName';
 let productsCachedStoreName = 'productsCachedStore';
 let db;
+let dbVersion = 2;
 
 (async function () {
     console.log('hbl_tools start');
@@ -227,7 +228,7 @@ async function processViewDouyinLive() {
         if (clearCacheBtn != null) clearCacheBtn.style.display = 'none';
     });
     //活动页indexDB相关操作，处理缓存逻辑
-    db = await openDB(dbName, 1);
+    db = await openDB(dbName, dbVersion);
     console.log('openDB success:' + dbName);
     await deleteOldCachedProducts(productsCachedStoreName, 1000 * 60 * 60 * 24 * 30);
 
@@ -565,7 +566,7 @@ async function processProductEditorIndex() {
             ToastProductEditorMsg(vue2App, '复制成功，粘贴即可:' + vue2App.multipleSelection, 'success', 3000);
         });
 
-        db = await openDB(dbName, 1);
+        db = await openDB(dbName, dbVersion);
         console.log('openDB success:' + dbName);
         await deleteOldCachedProducts(productEditorStoreName, 1000 * 60 * 60 * 24 * 30);
         var products = await cursorGetData(db, productEditorStoreName);
@@ -790,8 +791,8 @@ async function addProductsToWorksheet(workbook, worksheet, vue2App, products, im
             }
 
             let photo_base64s;
-            if (t.p_id ?? t.productId in cachedProductsMap) {
-                photo_base64s = cachedProductsMap[t.p_id ?? t.productId].photo_base64s;
+            if (t.p_id in cachedProductsMap) {
+                photo_base64s = cachedProductsMap[t.p_id].photo_base64s;
             }
             if (photo_base64s == null) {
                 photo_base64s = [];
@@ -973,6 +974,8 @@ function processAllProducts(vue2App) {
         }
         for (let i = 0; i < rows.length; i++) {
             let priceEles = rows[i].getElementsByClassName('text-danger');
+            //通过父节点来判断，因为有个别商品第二个初始价那里class是空，只能查到一个text-danger
+            priceEles = priceEles[0].parentElement.getElementsByTagName('span');
             if (priceEles.length == 2) {
                 if (priceEles[0].textContent.includes('****')) {
                     tryClickPriceEle(priceEles[0]);
@@ -981,9 +984,13 @@ function processAllProducts(vue2App) {
                     let jinHuoPrice = parseInt(parentEle.textContent.match(/进货价：(\d+)/)[1]);
                     //去掉两行无用信息，否则加了两行信息导致排版错位
                     parentEle.innerHTML = parentEle.innerHTML.replace(/<br>智能定价当前到手价.*<br>/, '<br>');
-                    parentEle.innerHTML = parentEle.innerHTML.replace(/<br>进货价[^>]*/, '<br');
+                    parentEle.innerHTML = parentEle.innerHTML.replace(/<br>进货价[^<]*/, '');
 
-                    priceEles[0].innerHTML = priceEles[0].innerHTML.replace('.00', '').replace('抖音', '<br>抖音');
+                    let prefix = '<br>';
+                    if (parentEle.previousElementSibling.textContent.length > 7) {
+                        prefix = '';
+                    }
+                    priceEles[0].innerHTML = priceEles[0].innerHTML.replace('.00', '').replace('抖音', prefix + '抖音');
 
                     let douyinPrice = parseInt(priceEles[0].textContent.match(/(\d+)/)[1]);
                     vue2App.tableData[i].dy_sale_price = douyinPrice;
