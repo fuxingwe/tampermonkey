@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.1.9
+// @version             0.2.0
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -37,6 +37,7 @@ let db;
 
     if (pathname.endsWith('/activity-new/view-douyin-live')) {
         let vue2App = document.getElementById('vue2-app').__vue__;
+
         //处理底部按钮，并设置为自适应换行
         let group = document.getElementsByClassName('view-shop-footer')[0];
         group.style.justifyContent = 'flex-start';
@@ -133,18 +134,27 @@ let db;
         console.log('openDB success:' + dbName);
         await deleteOldCachedProducts(productsCachedStoreName, 1000 * 60 * 60 * 24 * 30);
 
-        let tempBtn = btn.cloneNode(true);
-        tempBtn.textContent = '清空缓存';
-        group.insertBefore(tempBtn, exportButton1);
-        tempBtn.addEventListener('click', async () => {
+        let clearCacheBtn = btn.cloneNode(true);
+        var products = await cursorGetData(db, storeName);
+        if (products?.length > 0) {
+            clearCacheBtn.textContent = `清空缓存(总数:${products?.length})`;
+            clearCacheBtn.style.display = 'block';
+        } else {
+            clearCacheBtn.style.display = 'none';
+        }
+        group.appendChild(clearCacheBtn);
+        // clearCacheBtn.textContent = '清空缓存';
+        group.insertBefore(clearCacheBtn, exportButton1);
+        clearCacheBtn.addEventListener('click', async () => {
             await deleteDBStore(db, storeName);
+            clearCacheBtn.style.display = 'none';
             vue2App.$message({
                 type: 'success',
                 message: '清空缓存成功',
             });
         });
 
-        tempBtn = btn.cloneNode(true);
+        let tempBtn = btn.cloneNode(true);
         tempBtn.textContent = '存入缓存';
         group.insertBefore(tempBtn, exportButton1);
         tempBtn.addEventListener('click', async () => {
@@ -152,19 +162,17 @@ let db;
             if (!vue2App.checkSelectProduct()) {
                 return;
             }
+            await updateDBWithDatas(db, storeName, vue2App.selectedProducts);
+            //获取缓存数据
             var products = await cursorGetData(db, storeName);
-            vue2App.selectedProducts.forEach((t) => {
-                if (products != null && products.some((item) => item.p_id === t.p_id)) {
-                    console.log('缓存中已有该商品，跳过' + t.p_id);
-                } else {
-                    t.cacheTimeStamp = new Date().getTime();
-                    updateDB(db, storeName, t);
-                }
-            });
-            vue2App.$message({
-                type: 'success',
-                message: '存入缓存成功:' + vue2App.selectedProducts.map((t) => t.p_id).join(','),
-            });
+            if (products?.length > 0) {
+                clearCacheBtn.textContent = `清空缓存(总数:${products?.length})`;
+                clearCacheBtn.style.display = 'block';
+                vue2App.$message({
+                    type: 'success',
+                    message: `存入缓存成功,缓存总数:${products?.length},本次数量:${vue2App.selectedProducts?.length},本次详情:${vue2App.selectedProducts.map((t) => t.p_id).join(',')}`,
+                });
+            }
         });
 
         let lastProductsCount = 0;
@@ -181,6 +189,12 @@ let db;
         //定时执行，补充商品信息，因为可能通过搜索来刷新数据
         // eslint-disable-next-line no-constant-condition
         while (true) {
+            if (document.visibilityState == 'hidden') {
+                //当前页面不可见时不执行检查逻辑
+                console.log('waiting for visibilityState is visible');
+                await sleep(5000);
+                continue;
+            }
             if (vue2App == null || vue2App.cardData == null || vue2App.cardData.length <= 0) {
                 console.log('waiting for cardData');
                 lastProductsCount = 0;
@@ -393,9 +407,8 @@ let db;
                                 if (p_id in cachedProductsMap) {
                                     processCachedProduct(cachedProductsMap[data.p_id], data);
                                 } else {
-                                    data.cacheTimeStamp = new Date().getTime();
-                                    cachedProductsMap[data.p_id] = data;
                                     updateDB(db, productsCachedStoreName, data);
+                                    cachedProductsMap[data.p_id] = data;
                                 }
                             } else {
                                 needRequestPrice = true;
@@ -407,18 +420,35 @@ let db;
                     }
                     if (needRequestPrice) {
                         failCount += 1;
+                        tipMsg = `请求失败，还有价格没获取成功，${failCount}分钟之后再请求价格信息:${msg}`;
+                        console.log(tipMsg);
+                        vue2App.$message({
+                            type: 'error',
+                            message: tipMsg,
+                        });
+                        await sleep(60000 * failCount);
                     } else {
                         failCount = 0;
                     }
-                    tipMsg = `请求失败，还有价格没获取成功，${failCount}分钟之后再请求价格信息:${msg}`;
-                    console.log(tipMsg);
-                    vue2App.$message({
-                        type: 'error',
-                        message: tipMsg,
-                    });
-                    await sleep(60000 * failCount);
                 }
             }
+        }
+    } else if (pathname.endsWith('/product-editor/index')) {
+        //商品刷新页
+        let vue2App = document.getElementById('vue2-app').__vue__;
+        vue2App.searchForm.freemask_button = 1;
+        try {
+            setInterval(async () => {
+                if (document.visibilityState == 'hidden') {
+                    //当前页面不可见时不执行检查逻辑
+                    console.log('waiting for visibilityState is visible');
+                    return;
+                }
+                clickAllProducts();
+                vue2App.searchForm.freemask_button = 1; //设置不加密参数，每次搜索完会默认置为加密，这里再改回来
+            }, 2000);
+        } catch (error) {
+            console.log(error);
         }
     } else if (pathname.endsWith('/mis/product/view')) {
         //商品详情页
@@ -432,18 +462,6 @@ let db;
             for (let i = 0; i < elements.length; i++) {
                 tryClickPriceEle(elements[i]);
             }
-        }
-    } else if (pathname.endsWith('/product-editor/index')) {
-        //商品刷新页
-        let vue2App = document.getElementById('vue2-app').__vue__;
-        vue2App.searchForm.freemask_button = 1;
-        try {
-            setInterval(() => {
-                clickAllProducts();
-                vue2App.searchForm.freemask_button = 1; //设置不加密参数，每次搜索完会默认置为加密，这里再改回来
-            }, 2000);
-        } catch (error) {
-            console.log(error);
         }
     } else if (pathname.endsWith('/live/index')) {
         //直播管理页,自动搜索活动页
@@ -1157,7 +1175,6 @@ function processCachedProduct(cachedProduct, product) {
         cachedProduct.dy_sale_price = product.dy_sale_price;
         cachedProduct.liRun = product.liRun;
         cachedProduct.jinHuoPrice = product.jinHuoPrice;
-        cachedProduct.cacheTimeStamp = new Date().getTime();
         //还用该对象去更新，因为里面可能存储的有图片base64，不能直接用data
         updateDB(db, productsCachedStoreName, cachedProduct);
     }
@@ -1247,12 +1264,12 @@ function getDataByKey(db, storeName, key) {
  * 通过游标读取数据
  */
 function cursorGetData(db, storeName) {
-    let list = [];
-    let store = db
-        .transaction(storeName, 'readwrite') // 事务
-        .objectStore(storeName); // 仓库对象
-    let request = store.openCursor(); // 指针对象
     return new Promise((resolve, reject) => {
+        let list = [];
+        let store = db
+            .transaction(storeName, 'readwrite') // 事务
+            .objectStore(storeName); // 仓库对象
+        let request = store.openCursor(); // 指针对象
         request.onsuccess = function (e) {
             let cursor = e.target.result;
             if (cursor) {
@@ -1274,9 +1291,9 @@ function cursorGetData(db, storeName) {
  */
 // eslint-disable-next-line no-unused-vars
 function getDataByIndex(db, storeName, indexName, indexValue) {
-    let store = db.transaction(storeName, 'readwrite').objectStore(storeName);
-    let request = store.index(indexName).get(indexValue);
     return new Promise((resolve, reject) => {
+        let store = db.transaction(storeName, 'readwrite').objectStore(storeName);
+        let request = store.index(indexName).get(indexValue);
         request.onerror = function (e) {
             reject(e);
         };
@@ -1291,12 +1308,12 @@ function getDataByIndex(db, storeName, indexName, indexValue) {
  */
 // eslint-disable-next-line no-unused-vars
 function cursorGetDataByIndex(db, storeName, indexName, indexValue) {
-    let list = [];
-    let store = db.transaction(storeName, 'readwrite').objectStore(storeName); // 仓库对象
-    let request = store
-        .index(indexName) // 索引对象
-        .openCursor(IDBKeyRange.only(indexValue)); // 指针对象
     return new Promise((resolve, reject) => {
+        let list = [];
+        let store = db.transaction(storeName, 'readwrite').objectStore(storeName); // 仓库对象
+        let request = store
+            .index(indexName) // 索引对象
+            .openCursor(IDBKeyRange.only(indexValue)); // 指针对象
         request.onsuccess = function (e) {
             let cursor = e.target.result;
             if (cursor) {
@@ -1317,12 +1334,13 @@ function cursorGetDataByIndex(db, storeName, indexName, indexValue) {
  */
 // eslint-disable-next-line no-unused-vars
 function updateDB(db, storeName, data) {
-    let request = db
-        .transaction([storeName], 'readwrite') // 事务对象
-        .objectStore(storeName) // 仓库对象
-        .put(data);
-
     return new Promise((resolve) => {
+        data.cacheTimeStamp = new Date().getTime();
+        let request = db
+            .transaction([storeName], 'readwrite') // 事务对象
+            .objectStore(storeName) // 仓库对象
+            .put(data);
+
         request.onsuccess = function (ev) {
             resolve(ev);
         };
@@ -1334,13 +1352,40 @@ function updateDB(db, storeName, data) {
 }
 
 /**
+ * 批量更新数据，有则更新，没有则添加
+ */
+// eslint-disable-next-line no-unused-vars
+function updateDBWithDatas(db, storeName, datas) {
+    if (datas == null || datas.length == 0) {
+        return;
+    }
+    return new Promise((resolve) => {
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        let nowTime = new Date().getTime();
+        datas.forEach((data) => {
+            data.cacheTimeStamp = nowTime;
+            store.put(data);
+        });
+
+        transaction.oncomplete = function (ev) {
+            resolve(ev);
+        };
+
+        transaction.onabort = function (ev) {
+            resolve(ev);
+        };
+    });
+}
+
+/**
  * 删除数据
  */
 // eslint-disable-next-line no-unused-vars
 function deleteDB(db, storeName, id) {
-    let request = db.transaction([storeName], 'readwrite').objectStore(storeName).delete(id);
-
     return new Promise((resolve) => {
+        let request = db.transaction([storeName], 'readwrite').objectStore(storeName).delete(id);
+
         request.onsuccess = function (ev) {
             resolve(ev);
         };
@@ -1372,8 +1417,8 @@ function deleteDBStore(db, storeName) {
 // eslint-disable-next-line no-unused-vars
 function deleteDBAll(dbName) {
     console.log(dbName);
-    let deleteRequest = window.indexedDB.deleteDatabase(dbName);
     return new Promise((resolve) => {
+        let deleteRequest = window.indexedDB.deleteDatabase(dbName);
         deleteRequest.onerror = function (event) {
             console.log('删除失败' + event);
             resolve(false);
