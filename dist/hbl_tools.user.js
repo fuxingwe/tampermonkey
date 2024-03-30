@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.2.2
+// @version             0.2.3
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -24,7 +24,7 @@ let storeName = 'productsSelectedStore';
 let productEditorStoreName = 'productEditorStoreName';
 let productsCachedStoreName = 'productsCachedStore';
 let db;
-let dbVersion = 2;
+let dbVersion = 3;
 
 (async function () {
     console.log('hbl_tools start');
@@ -739,13 +739,13 @@ async function exportProducts2ExcelRaw(vue2App) {
     }
 }
 
-async function addProductsToWorksheet(workbook, worksheet, vue2App, products, imageStartIndex, imageCount) {
+async function addProductsToWorksheet(workbook, worksheet, vue2App, isProductEditor, products, imageStartIndex, imageCount) {
     try {
         let cachedProductsMap = {};
         if (imageCount > 0) {
             //获取缓存数据
             var cachedProducts;
-            if (products[0]?.p_id != null) {
+            if (!isProductEditor) {
                 //活动页里的商品有缓存，商品刷新页无缓存
                 cachedProducts = await cursorGetData(db, productsCachedStoreName);
                 for (let index = 0; index < cachedProducts?.length; index++) {
@@ -767,7 +767,7 @@ async function addProductsToWorksheet(workbook, worksheet, vue2App, products, im
                     tooltip: pUrl,
                 },
                 t.brand_name ? t.brand_name + '-' + t.p_name : t.brandName + '-' + t.productName,
-                Math.floor(t.dy_sale_price ?? 0),
+                Math.floor(t.dy_sale_price ?? '未获取'),
                 t.jinHuoPrice ?? '未获取',
                 t.liRun ?? '未获取',
                 t.lend_status ?? t.statusText,
@@ -790,8 +790,8 @@ async function addProductsToWorksheet(workbook, worksheet, vue2App, products, im
                 photoUrls[6] = tempUrl;
             }
 
-            let photo_base64s;
-            if (t.p_id in cachedProductsMap) {
+            let photo_base64s = t.photo_base64s;
+            if (photo_base64s == null && t.p_id in cachedProductsMap) {
                 photo_base64s = cachedProductsMap[t.p_id].photo_base64s;
             }
             if (photo_base64s == null) {
@@ -811,25 +811,31 @@ async function addProductsToWorksheet(workbook, worksheet, vue2App, products, im
                     });
                     let url = photoUrls[index2] + '?imageMogr2/thumbnail/300'; //缩放一下，否则太大了
                     base64Data = await imageToBase64(url);
-                    photo_base64s[index2] = base64Data;
+                    if (!base64Data.includes('失败')) {
+                        photo_base64s[index2] = base64Data;
+                    } else {
+                        console.log('图片下载失败:' + url);
+                    }
                 }
-                let imageId = workbook.addImage({
-                    base64: base64Data,
-                    extension: 'png',
-                });
-                worksheet.addImage(imageId, {
-                    tl: { col: column, row: row },
-                    br: { col: column + 1, row: row + 1 },
-                    ext: { width: 100, height: 100 },
-                    editAs: 'undefined',
-                });
+                if (base64Data != null && typeof base64Data === 'string' && base64Data.includes(',')) {
+                    let imageId = workbook.addImage({
+                        base64: base64Data,
+                        extension: 'png',
+                    });
+                    worksheet.addImage(imageId, {
+                        tl: { col: column, row: row },
+                        br: { col: column + 1, row: row + 1 },
+                        ext: { width: 100, height: 100 },
+                        editAs: 'undefined',
+                    });
+                }
             }
             if (photo_base64s.length > 0) {
                 t.photo_base64s = photo_base64s;
-                if (t.p_id != null) {
-                    await updateDB(db, productsCachedStoreName, t);
-                }
             }
+        }
+        if (!isProductEditor) {
+            await updateDBWithDatas(db, productsCachedStoreName, products);
         }
     } catch (error) {
         console.log(error);
@@ -869,7 +875,7 @@ async function exportProducts2Excel(vue2App, imageCount, isProductEditor = false
         return;
     }
 
-    let excelFileName = getExcelFileName();
+    let excelFileName = getExcelFileName(isProductEditor);
     vue2App.$message({
         type: 'success',
         message: '开始导出Excel文件:' + excelFileName + ',' + allPids.join(','),
@@ -905,7 +911,7 @@ async function exportProducts2Excel(vue2App, imageCount, isProductEditor = false
     }
     worksheet.columns = columns;
 
-    await addProductsToWorksheet(workbook, worksheet, vue2App, allProducts, imageStartIndex, imageCount);
+    await addProductsToWorksheet(workbook, worksheet, vue2App, isProductEditor, allProducts, imageStartIndex, imageCount);
     // worksheet.getRow(1).height=10
     const buffer = await workbook.xlsx.writeBuffer();
 
@@ -940,7 +946,7 @@ function imageToBase64(url) {
             resolve(dataURL);
         };
         image.onerror = () => {
-            resolve({ message: '相片处理失败' });
+            resolve('相片处理失败');
         };
     });
 }
@@ -1019,8 +1025,11 @@ function processAllProducts(vue2App) {
     }
 }
 
-function getExcelFileName() {
+function getExcelFileName(isProductEditor) {
     try {
+        if (isProductEditor) {
+            return 'Products_' + getCurrentTimeFormatted() + '.xlsx';
+        }
         let id = document.URL.match(/\bid=(\d+)/)[1];
         let activityName = document.getElementsByClassName('el-descriptions-row')[2].lastChild.textContent;
         return id + '_' + activityName + '_' + getCurrentTimeFormatted() + '.xlsx';
@@ -1337,11 +1346,21 @@ function openDB(dbName, version = 1) {
             reject(event);
         };
 
+        request.onblocked = function (event) {
+            alert('脚本更新了，请关闭掉之前打开的其他旧页面' + event);
+        };
+
         request.onupgradeneeded = function (event) {
             // 数据库创建或升级的时候会触发
             console.log('onupgradeneeded');
             db = event.target.result; // 数据库对象
-            // let objectStore
+
+            //升级时删掉旧表
+            const objectStoreNames = db.objectStoreNames;
+            Array.from(objectStoreNames).forEach((storeName) => {
+                db.deleteObjectStore(storeName);
+            });
+
             if (!db.objectStoreNames.contains(storeName)) {
                 db.createObjectStore(storeName, { keyPath: 'p_id' }); // 创建表
             }
