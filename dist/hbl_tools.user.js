@@ -2,19 +2,19 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.2.3
+// @version             0.2.4
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
 // @license             MIT
 // @match               *://*.aplum.com/mis/*
+// @match               *://fxg.jinritemai.com/ffa/g/create*
 // @run-at              document-idle
 // @supportURL          https://baidu.com
 // @homepage            https://baidu.com
 // @require             https://cdn.bootcdn.net/ajax/libs/exceljs/4.3.0/exceljs.min.js
 // @require             https://cdn.bootcdn.net/ajax/libs/FileSaver.js/2.0.5/FileSaver.js
-// @grant               GM_getValue
-// @grant               GM_setValue
+// @grant               GM_download
 // @grant               GM_setClipboard
 // @icon                data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAAAAXNSR0IArs4c6QAAAttJREFUaEPtWVtSAjEQTKC0vISUn3IK8WTAycBT6KeFl7C0JFZGg9mQTPcsiyUqn5qdpLvnlYl3J/7zJ35+9/cA3E/OF965uSgXwjqMx8vp4/O6j5JiK4Qb5/0s2oo2rp9eby22aAXury5mfrtd1YwH55bTzcvCsnGHiOLD680LfS564cPl2UqYavwsIDQyRFgDITyAyXlQGf50J0YF//Y218gQVyJVoAAgxphDW9eE0eiWiS0KQNz8ASlgPSFYP6gCcS8t6FJGMmFQ4ilmJDYb0QogFVjGEkhNUdZ9oq3BAFgyB8poFjJoAKULxU1qf0NuVCaExHauiIUMCkBr09KtmI077Ge+3ocM2oVam9aCW5NfI6K0xZBBAUCbWlTIiagdsFSBAQFdSGM/+fteio1V2fu7Mh52TaBSaa2upAKwGEOZJQeDmLUEtArAYmhIABbiOgDih4mpXZ8u7aFeGfv0ShYV5N6RXHI0Wuc9kgBAbQKqjBb2c1dSM1Z+caoUl3QmD9lD7IONtMKGVGCI9ZC9RkbZuVq6XqIS3Pq/Yr/jxjUVnFv6726T++JsfXfaAEJY7zVke0gPkJhhO8ZBk900sVDcDwbxoYF2SBCj+IyZ6CONKiMTKQNgStArjlB2I8/ULWRXFzO33cropMwAh+Tsmgqm2oIKWUtmSyuBcnZnD8R+UVs08n53Mye9fjaRa8XC3p2hkllYl2Ta91xNeB9gLhnspsglmctT5Y6Bs3U5kc5nNpZNUZvMEmFSIC1usce4WL5hDiJ3SQsRvQAcbazyWWOQezWrNXagrxXqNM0wEkcp9ziDLVAZLZtKdlOGxRZbMAvtYgA8cKQnIlrRgR5LeACnPF5HzR7NumEh6pWSqeEU+MlPTNJyk1MChmRkC41xetWBsi/KjaD7Qg2UBoJ1H2n7GcbyNVJ55cuPx+k4cLK+ESd7ElvZi2UfIswArICPvf4fwLEZRvbfAT8jlbXobXLcAAAAAElFTkSuQmCC
 // ==/UserScript==
@@ -26,16 +26,36 @@ let productsCachedStoreName = 'productsCachedStore';
 let db;
 let dbVersion = 3;
 
+let searchActivityForm = {
+    pageIndex: 1,
+    pageSize: 20,
+    id: '',
+    room_name: '',
+    user_id: '1569406692',
+    activity_id: '',
+    location: '',
+    date_range: '',
+    is_show: '',
+    deleted: '0',
+    live_room_type: 'all',
+    position: '',
+    live_type: 'total',
+    live_status: 'all',
+    is_dou_yin_stock: '',
+};
+
 (async function () {
     console.log('hbl_tools start');
-    let enable = checkEnable();
-    if (!enable) {
-        console.log('checkEnable is false');
-        return;
-    }
     let pathname = location.pathname;
     console.log(pathname);
-    processBorrowTip();
+    if (!pathname.endsWith('/ffa/g/create')) {
+        let enable = checkEnable();
+        if (!enable) {
+            console.log('checkEnable is false');
+            return;
+        }
+        processBorrowTip();
+    }
 
     if (pathname.endsWith('/activity-new/view-douyin-live')) {
         processViewDouyinLive();
@@ -46,6 +66,21 @@ let dbVersion = 3;
         tryClickPriceEle(document.getElementById('in_price_mask'));
         tryClickPriceEle(document.getElementById('seller_user_masked'));
         tryClickPriceEle(document.getElementById('pangu_guide_price_mask'));
+
+        let parentEle = document.getElementsByClassName('col-md-7')[0];
+        let pidEle = parentEle?.firstChild;
+        if (pidEle == null) {
+            return;
+        }
+        let activites = await getActivities();
+        if (activites?.length <= 0) {
+            addExportDouDianButton(null, parentEle, pidEle);
+        } else {
+            let count = Math.min(3, activites.length);
+            for (let i = activites.length - 1; i >= activites.length - count; i--) {
+                addExportDouDianButton(activites[i], parentEle, pidEle);
+            }
+        }
     } else if (pathname.endsWith('/toonsale/view')) {
         //批次页
         let elements = document.getElementsByClassName('hand-style');
@@ -127,8 +162,172 @@ let dbVersion = 3;
         ele.dispatchEvent(new Event('input'));
 
         Toast('自动填写成功，时间默认填的2天后，请检查并修改直播间名称中的时间、开始时间、结束时间', 100000);
+    } else if (pathname.endsWith('/dou-yin-sync-product/index')) {
+        //活动页的抖音同步页
+        setInterval(() => {
+            let shopNameEle = document.querySelector('div.el-form-item.is-required > div > div > div > input');
+            if (shopNameEle != null && shopNameEle.value.length <= 0) {
+                shopNameEle.value = '红布林包';
+                shopNameEle.dispatchEvent(new Event('input'));
+            }
+            let shopNameConfigEle = document.querySelector('#vue2-app > div.el-row > div > div > div.el-dialog__body > form > div:nth-child(4) > div > div.el-input.el-input--suffix > input');
+            if (shopNameConfigEle != null && shopNameConfigEle.value.length <= 0) {
+                shopNameConfigEle.value = '[1]/[2]/[6]/[7]';
+                shopNameConfigEle.dispatchEvent(new Event('input'));
+            }
+        }, 1000);
+    } else if (pathname.endsWith('/ffa/g/create')) {
+        //抖音创建商品页;
+        params = getURLParams();
+        if (params == null || params.pid == null) {
+            console.log('no valid hbl param');
+            return;
+        }
+        //eslint-disable-next-line no-constant-condition
+        while (true) {
+            console.log('waiting for elements completed');
+            await sleep(1000);
+            let finished = true;
+            let nameEle = document.getElementsByClassName('ecom-g-input-wrapper ecom-g-input-group')[0]?.lastChild?.firstChild;
+            if (nameEle != null) {
+                if (params.activityName != null && params.activityId != null) {
+                    setReactInputValue(nameEle, `红布林/${params.pid}/${params.activityName}/z/${params.activityId}`);
+                } else {
+                    let values = nameEle.value.split('/');
+                    if (values.length >= 2) {
+                        values[1] = `${params.pid}`;
+                        setReactInputValue(nameEle, values.join('/'));
+                    }
+                }
+                nameEle.dispatchEvent(new Event('input'));
+            } else {
+                finished = false;
+            }
+            let pidEle = document.querySelector('[dropdownclassname="auto-dropdown-id-产品编号"]');
+            if (pidEle != null && params.pid != null) {
+                setReactInputValue(pidEle, params.pid);
+            }
+            let seriesEle = document.getElementsByClassName('ecom-g-select ecom-g-select-single ecom-g-select-show-arrow ecom-g-select-show-search')[2]?.firstChild?.firstChild?.firstChild;
+            if (seriesEle != null && params.series != null) {
+                setReactInputValue(seriesEle, params.series);
+            }
+            let priceEle = document.querySelector('[aria-valuenow="8899"]');
+            if (priceEle != null && params.price != null) {
+                setReactInputValue(priceEle, params.price);
+            } else {
+                finished = false;
+            }
+            let pidEle2 = document.querySelector('[placeholder="请输入erp编码"]');
+            if (pidEle2 != null && params.pid != null) {
+                setReactInputValue(pidEle2, params.pid);
+            } else {
+                finished = false;
+            }
+            if (finished) {
+                Toast('已自动填写标题、编号、价格，请检查是否正确，并手动上传图片(已自动下载到默认目录)', 100000);
+                break;
+            }
+        }
     }
 })();
+
+//设置react组件的input值，需要使用input事件触发
+let inputEvent = new Event('input', { bubbles: true });
+//  React15
+inputEvent.simulated = true;
+function setReactInputValue(element, value) {
+    let lastValue = element.value;
+    element.value = value;
+    // //  React16 内部定义了descriptor拦截value，此处重置状态
+    let tracker = element._valueTracker;
+    if (tracker) {
+        tracker.setValue(lastValue);
+    }
+    element.dispatchEvent(inputEvent);
+}
+
+async function getActivities() {
+    const end = new Date();
+    const start = new Date();
+    end.setTime(end.getTime() + 3600 * 1000 * 24 * 15);
+    let year = start.getFullYear();
+    let month = (start.getMonth() + 1).toString().padStart(2, '0');
+    let day = start.getDate().toString().padStart(2, '0');
+    let startRange = `${year}-${month}-${day}`;
+
+    year = end.getFullYear();
+    month = (end.getMonth() + 1).toString().padStart(2, '0');
+    day = end.getDate().toString().padStart(2, '0');
+    let endRange = `${year}-${month}-${day}`;
+    searchActivityForm.date_range = [startRange, endRange];
+
+    return new Promise((resolve) => {
+        try {
+            $.get('/mis/apis/live-api/live-room-list', searchActivityForm, function (res) {
+                console.log(res.msg);
+                if (res.code === 0) {
+                    resolve(res.data.list);
+                } else {
+                    resolve(null);
+                }
+            });
+        } catch (error) {
+            console.log(error);
+            resolve(null);
+        }
+    });
+}
+
+function addExportDouDianButton(activity, parentEle, pidEle) {
+    let btn = document.createElement('button');
+    btn.textContent = '导入抖店' + (activity ? '-' + activity.room_name : '');
+    btn.className = 'btn btn-sm btn-primary';
+    btn.style.background = 'green';
+    btn.style.marginLeft = '10px';
+    // btn.style.marginTop = '10px';
+    // btn.style.height = '30px';
+    // parentEle.style.display = 'flex';
+    // parentEle.style.flexWrap = 'wrap';
+    // parentEle.style.alignItems = 'center';
+    parentEle.insertBefore(btn, parentEle.lastChild);
+    btn.addEventListener('click', () => {
+        let vue2App = document.getElementById('vue2-app').__vue__;
+        let pid = pidEle.textContent;
+        let priceEle = document.getElementsByClassName('text-danger')[0];
+        let price = priceEle.textContent?.match(/(\d+)/)[1];
+        let series = document.getElementsByClassName('col-md-7')[1]?.firstChild?.lastChild?.lastChild?.textContent;
+        let imageEles = document.getElementsByClassName('img-responsive');
+        if (imageEles != null && imageEles.length > 0) {
+            vue2App.$message({
+                type: 'success',
+                message: '开始自动下载商品图到默认下载目录',
+            });
+            Array.from(imageEles).forEach((imageEle, index) => {
+                let imageName = pid + '_' + index + '.png';
+                vue2App.$message({
+                    type: 'success',
+                    message: `开始自动下载商品图到默认下载目录:${imageName},(${index}/${imageEles.length})`,
+                });
+                GM_download({
+                    url: imageEle.src,
+                    name: imageName, //不填则自动获取文件名
+                    saveAs: false, //布尔值，是否显示"保存为"对话框
+                    conflictAction: 'overwrite', //文件冲突时的策略
+                    onerror: function (error) {
+                        //如果下载最终出现错误，则要执行的回调
+                        console.log(error);
+                    },
+                });
+            });
+        }
+        let paramsStr = `pid=${pid}&price=${price}&series=${series}`;
+        if (activity != null) {
+            paramsStr += `&activityName=${activity.room_name}&activityId=${activity.id}`;
+        }
+        let url = `https://fxg.jinritemai.com/ffa/g/create?copyid=3675855111361527939&cid=26178&entrance=copy&${paramsStr}`;
+        window.open(url);
+    });
+}
 
 async function processViewDouyinLive() {
     let vue2App = document.getElementById('vue2-app').__vue__;
@@ -233,8 +432,12 @@ async function processViewDouyinLive() {
     await deleteOldCachedProducts(productsCachedStoreName, 1000 * 60 * 60 * 24 * 30);
 
     clearCacheBtn = btn.cloneNode(true);
+    clearCacheBtn.style.color = 'red';
+    clearCacheBtn.style.background = 'yellow';
+
     var products = await cursorGetData(db, storeName);
     if (products?.length > 0) {
+        console.log('当前缓存区:' + products.map((t) => t.p_id).join(','));
         clearCacheBtn.textContent = `清空缓存(总数:${products?.length})`;
         clearCacheBtn.style.display = 'inline-block';
     } else {
@@ -242,12 +445,20 @@ async function processViewDouyinLive() {
     }
     group.insertBefore(clearCacheBtn, exportButton1);
     clearCacheBtn.addEventListener('click', async () => {
-        await deleteDBStore(db, storeName);
-        clearCacheBtn.style.display = 'none';
-        vue2App.$message({
-            type: 'success',
-            message: '清空缓存成功',
-        });
+        vue2App
+            .$confirm('确认要清空缓存吗?（一般不用手动清空，导出Excel后会自动清空）', '提示', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'warning',
+            })
+            .then(async () => {
+                await deleteDBStore(db, storeName);
+                clearCacheBtn.style.display = 'none';
+                vue2App.$message({
+                    type: 'success',
+                    message: '清空缓存成功',
+                });
+            });
     });
 
     let tempBtn = btn.cloneNode(true);
@@ -264,6 +475,7 @@ async function processViewDouyinLive() {
         if (products?.length > 0) {
             clearCacheBtn.textContent = `清空缓存(总数:${products?.length})`;
             clearCacheBtn.style.display = 'inline-block';
+            console.log('存入缓存成功，当前缓存区:' + products.map((t) => t.p_id).join(','));
             vue2App.$message({
                 type: 'success',
                 message: `存入缓存成功,缓存总数:${products?.length},本次数量:${vue2App.selectedProducts?.length},本次详情:${vue2App.selectedProducts.map((t) => t.p_id).join(',')}`,
@@ -471,6 +683,7 @@ async function processViewDouyinLive() {
             vue2App.$message({
                 type: 'warning',
                 message: '有商品需要请求价格详情，稍等片刻显示,数量:' + Object.keys(noJinHuoPriceDatas).length,
+                duration: 10,
             });
             let msg = await getJinHuoPrices(noJinHuoPriceDatas);
 
@@ -571,7 +784,10 @@ async function processProductEditorIndex() {
         await deleteOldCachedProducts(productEditorStoreName, 1000 * 60 * 60 * 24 * 30);
         var products = await cursorGetData(db, productEditorStoreName);
         let clearCacheBtn = templateBtn.cloneNode(true);
+        clearCacheBtn.style.color = 'red';
+        clearCacheBtn.style.background = 'yellow';
         if (products?.length > 0) {
+            console.log('当前缓存区:' + products.map((t) => t.productId).join(','));
             clearCacheBtn.textContent = `清空缓存(总数:${products?.length})`;
             clearCacheBtn.style.display = 'inline-block';
         } else {
@@ -579,9 +795,17 @@ async function processProductEditorIndex() {
         }
         group.appendChild(clearCacheBtn);
         clearCacheBtn.addEventListener('click', async () => {
-            await deleteDBStore(db, productEditorStoreName);
-            clearCacheBtn.style.display = 'none';
-            ToastProductEditorMsg(vue2App, '清空缓存成功', 'success', 2000);
+            vue2App
+                .$confirm('确认要清空缓存吗?（一般不用手动清空，导出Excel后会自动清空）', '提示', {
+                    confirmButtonText: '确定',
+                    cancelButtonText: '取消',
+                    type: 'warning',
+                })
+                .then(async () => {
+                    await deleteDBStore(db, productEditorStoreName);
+                    clearCacheBtn.style.display = 'none';
+                    ToastProductEditorMsg(vue2App, '清空缓存成功', 'success', 2000);
+                });
         });
 
         let tempBtn = templateBtn.cloneNode(true);
@@ -598,6 +822,7 @@ async function processProductEditorIndex() {
             if (products?.length > 0) {
                 clearCacheBtn.textContent = `清空缓存(总数:${products?.length})`;
                 clearCacheBtn.style.display = 'inline-block';
+                console.log('存入缓存成功，当前缓存区:' + products.map((t) => t.productId).join(','));
                 ToastProductEditorMsg(vue2App, `存入缓存成功,缓存总数:${products?.length},本次数量:${vue2App.multipleSelectionData?.length},本次详情:${vue2App.multipleSelection}`, 'success', 3000);
             }
         });
@@ -1346,8 +1571,8 @@ function openDB(dbName, version = 1) {
             reject(event);
         };
 
-        request.onblocked = function (event) {
-            alert('脚本更新了，请关闭掉之前打开的其他旧页面' + event);
+        request.onblocked = function () {
+            alert('脚本更新了，请先关闭掉所有之前打开的旧页面，然后才能正常使用最新功能');
         };
 
         request.onupgradeneeded = function (event) {
@@ -1600,4 +1825,14 @@ function closeDB(db) {
  */
 function sleep(time) {
     return new Promise((resolve) => setTimeout(resolve, time));
+}
+
+function getURLParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const params = {};
+    for (const [key, value] of urlParams) {
+        params[key] = value;
+    }
+
+    return params;
 }
