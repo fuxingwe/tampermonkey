@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.2.5
+// @version             0.2.6
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -69,6 +69,8 @@ let searchActivityForm = {
         tryClickPriceEle(document.getElementById('in_price_mask'));
         tryClickPriceEle(document.getElementById('seller_user_masked'));
         tryClickPriceEle(document.getElementById('pangu_guide_price_mask'));
+        tryClickPriceEle(document.getElementById('cur_price_mask'));
+        tryClickPriceEle(document.getElementById('dy_lowest_sale_price_mask'));
 
         let parentEle = document.getElementsByClassName('col-md-7')[0];
         let pidEle = parentEle?.firstChild;
