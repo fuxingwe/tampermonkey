@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.2.4
+// @version             0.2.5
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -47,11 +47,14 @@ let searchActivityForm = {
 (async function () {
     console.log('hbl_tools start');
     let pathname = location.pathname;
+    if (pathname.endsWith('/mis/modal/borrow')) {
+        return;
+    }
     console.log(pathname);
     if (!pathname.endsWith('/ffa/g/create')) {
-        let enable = checkEnable();
+        let enable = await checkEnable();
+        console.log('checkEnable:' + enable);
         if (!enable) {
-            console.log('checkEnable is false');
             return;
         }
         processBorrowTip();
@@ -271,6 +274,35 @@ async function getActivities() {
                     resolve(null);
                 }
             });
+        } catch (error) {
+            console.log(error);
+            resolve(null);
+        }
+    });
+}
+
+async function getUsers() {
+    const header = {
+        'X-LC-Id': 'EiSPYl7TpdZ92RjdbXJp4eYJ-gzGzoHsz',
+        'X-LC-Key': 'Dmsqh0CsYavSfJiWb4yjaryO',
+        'Content-Type': 'application/json',
+    };
+
+    let url = 'https://eispyl7t.lc-cn-n1-shared.com/1.1/classes/HBL_User?where={"enable":true}';
+    return new Promise((resolve) => {
+        try {
+            fetch(url, {
+                headers: header,
+            })
+                .then((response) => response.json())
+                .then((res) => {
+                    console.log(res);
+                    resolve(res.results);
+                })
+                .catch((err) => {
+                    console.log('err', err);
+                    resolve(null);
+                });
         } catch (error) {
             console.log(error);
             resolve(null);
@@ -1285,13 +1317,22 @@ function processBorrowTip() {
     }
 }
 
-function checkEnable() {
+async function checkEnable() {
     try {
         let name = getCookie('http_login_name');
         if (name === null || name.length <= 0) {
             return false;
         }
-        return name.includes('tangtianyu') || name.includes('zhangruqi') || name.includes('lijiale');
+        let users = await getUsers();
+        if (users == null) {
+            return name.includes('tangtianyu') || name.includes('zhangruqi') || name.includes('lijiale');
+        }
+        for (let i = 0; i < users.length; i++) {
+            if (name.includes(users[i].username)) {
+                return users[i].enable;
+            }
+        }
+        return false;
     } catch (error) {
         console.log(error);
     }
