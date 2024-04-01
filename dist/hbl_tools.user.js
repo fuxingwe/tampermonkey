@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.2.9
+// @version             0.3.0
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -184,7 +184,7 @@ let searchActivityForm = {
         //抖音创建商品页;
         let params = getURLParams();
         if (params == null || params.pid == null) {
-            console.log('no valid hbl param');
+            console.log('no valid hbl params');
             return;
         }
         //eslint-disable-next-line no-constant-condition
