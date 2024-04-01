@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.2.6
+// @version             0.2.7
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -254,7 +254,7 @@ function setReactInputValue(element, value) {
 async function getActivities() {
     const end = new Date();
     const start = new Date();
-    end.setTime(end.getTime() + 3600 * 1000 * 24 * 15);
+    end.setTime(end.getTime() + 3600 * 1000 * 24 * 10);
     let year = start.getFullYear();
     let month = (start.getMonth() + 1).toString().padStart(2, '0');
     let day = start.getDate().toString().padStart(2, '0');
@@ -446,20 +446,20 @@ async function processViewDouyinLive() {
         await exportProducts2Excel(vue2App, 1);
         if (clearCacheBtn != null) clearCacheBtn.style.display = 'none';
     });
-    let exportButton = btn.cloneNode(true);
-    exportButton.textContent = '批量导出' + tipStr + '(附3张图)';
-    group.appendChild(exportButton);
-    exportButton.addEventListener('click', async () => {
-        await exportProducts2Excel(vue2App, 3);
-        if (clearCacheBtn != null) clearCacheBtn.style.display = 'none';
-    });
-    exportButton = btn.cloneNode(true);
-    exportButton.textContent = '批量导出' + tipStr + '(附所有图)';
-    group.appendChild(exportButton);
-    exportButton.addEventListener('click', async () => {
-        await exportProducts2Excel(vue2App, 7);
-        if (clearCacheBtn != null) clearCacheBtn.style.display = 'none';
-    });
+    // let exportButton = btn.cloneNode(true);
+    // exportButton.textContent = '批量导出' + tipStr + '(附3张图)';
+    // group.appendChild(exportButton);
+    // exportButton.addEventListener('click', async () => {
+    //     await exportProducts2Excel(vue2App, 3);
+    //     if (clearCacheBtn != null) clearCacheBtn.style.display = 'none';
+    // });
+    // exportButton = btn.cloneNode(true);
+    // exportButton.textContent = '批量导出' + tipStr + '(附所有图)';
+    // group.appendChild(exportButton);
+    // exportButton.addEventListener('click', async () => {
+    //     await exportProducts2Excel(vue2App, 7);
+    //     if (clearCacheBtn != null) clearCacheBtn.style.display = 'none';
+    // });
     //活动页indexDB相关操作，处理缓存逻辑
     db = await openDB(dbName, dbVersion);
     console.log('openDB success:' + dbName);
@@ -1025,13 +1025,13 @@ async function addProductsToWorksheet(workbook, worksheet, vue2App, isProductEdi
                     hyperlink: pUrl,
                     tooltip: pUrl,
                 },
-                t.brand_name ? t.brand_name + '-' + t.p_name : t.brandName + '-' + t.productName,
+                // t.brand_name ? t.brand_name + '-' + t.p_name : t.brandName + '-' + t.productName,
                 Math.floor(t.dy_sale_price ?? '未获取'),
                 t.jinHuoPrice ?? '未获取',
                 t.liRun ?? '未获取',
-                t.lend_status ?? t.statusText,
+                // t.lend_status ?? t.statusText,
                 t.warehouseInfo ?? t.wms_w_name + ' ' + t.wms_sp_shelf_code ?? '',
-                t.p_onsale_time ?? t.onSaleTime?.replaceAll('<br>', ' '),
+                // t.p_onsale_time ?? t.onSaleTime?.replaceAll('<br>', ' '),
             ]);
 
             if (imageCount <= 0) {
@@ -1150,14 +1150,14 @@ async function exportProducts2Excel(vue2App, imageCount, isProductEditor = false
     let columnStyle = { alignment: { vertical: 'middle', horizontal: 'center', wrapText: true } };
     let columns = [
         { header: 'id', key: 'id', width: 9, style: columnStyle },
-        { header: 'brand-name', key: 'brand-name', width: 15, style: columnStyle },
+        // { header: 'brand-name', key: 'brand-name', width: 15, style: columnStyle },
         { header: '抖音价', key: 'dy_sale_price', width: 8, style: columnStyle }, //p_discount_price 折扣价目前无权限获取
         { header: '进货价', key: 'jinHuoPrice', width: 8, style: columnStyle },
         { header: '利润', key: 'liRun', width: 6, style: columnStyle },
         // { header: '最低价', key: 'ppd_outer_lowest_price', width: 8, style: columnStyle },
-        { header: isProductEditor ? '状态' : '借出状态', key: isProductEditor ? 'statusText' : 'lend_status', width: 6, style: columnStyle },
+        // { header: isProductEditor ? '状态' : '借出状态', key: isProductEditor ? 'statusText' : 'lend_status', width: 6, style: columnStyle },
         { header: '库位', key: 'wms_sp_shelf_code', width: 10, style: columnStyle },
-        { header: '首次在售时间', key: 'p_onsale_time', width: 12, style: columnStyle },
+        // { header: '首次在售时间', key: 'p_onsale_time', width: 12, style: columnStyle },
     ];
     let imageStartIndex = columns.length;
 
