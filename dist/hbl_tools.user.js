@@ -1,4 +1,3 @@
-/* eslint-disable no-undef */
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
@@ -183,7 +182,7 @@ let searchActivityForm = {
         }, 1000);
     } else if (pathname.endsWith('/ffa/g/create')) {
         //抖音创建商品页;
-        params = getURLParams();
+        let params = getURLParams();
         if (params == null || params.pid == null) {
             console.log('no valid hbl param');
             return;
@@ -268,6 +267,7 @@ async function getActivities() {
 
     return new Promise((resolve) => {
         try {
+            // eslint-disable-next-line no-undef
             $.get('/mis/apis/live-api/live-room-list', searchActivityForm, function (res) {
                 console.log(res.msg);
                 if (res.code === 0) {
@@ -342,6 +342,7 @@ function addExportDouDianButton(activity, parentEle, pidEle) {
                     type: 'success',
                     message: `开始自动下载商品图到默认下载目录:${imageName},(${index}/${imageEles.length})`,
                 });
+                // eslint-disable-next-line no-undef
                 GM_download({
                     url: imageEle.src,
                     name: imageName, //不填则自动获取文件名
@@ -383,6 +384,7 @@ async function processViewDouyinLive() {
         let selectedProducts = vue2App.selectedProducts;
         let selectedPids = selectedProducts.map((t) => t.p_id);
         let copyStr = selectedPids.join('\n');
+        // eslint-disable-next-line no-undef
         GM_setClipboard(copyStr);
         vue2App.$message({
             type: 'success',
@@ -809,6 +811,7 @@ async function processProductEditorIndex() {
             if (!checkProductEditorSelectProduct(vue2App)) {
                 return;
             }
+            // eslint-disable-next-line no-undef
             GM_setClipboard(vue2App.multipleSelection.replaceAll(',', '\n'));
             ToastProductEditorMsg(vue2App, '复制成功，粘贴即可:' + vue2App.multipleSelection, 'success', 3000);
         });
@@ -938,6 +941,7 @@ async function processFaSheProducts(vue2App) {
             btnParent.appendChild(importBtn);
             importBtn.addEventListener('click', () => {
                 formData.set('id', aid);
+                // eslint-disable-next-line no-undef
                 $.ajax({
                     type: 'post',
                     url: '/mis/activity/new-import-excel',
@@ -982,6 +986,7 @@ async function exportProducts2ExcelRaw(vue2App) {
         if (selectedProducts == null || selectedProducts.length <= 0) {
             return;
         }
+        // eslint-disable-next-line no-undef
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet('sheet1');
         worksheet.columns = [{ header: 'id', key: 'id' }];
@@ -1140,6 +1145,7 @@ async function exportProducts2Excel(vue2App, imageCount, isProductEditor = false
         message: '开始导出Excel文件:' + excelFileName + ',' + allPids.join(','),
     });
 
+    // eslint-disable-next-line no-undef
     const workbook = new ExcelJS.Workbook();
     // 创建一个冻结了第一行和第一列的工作表
     const worksheet = workbook.addWorksheet('sheet1', { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] });
@@ -1420,20 +1426,18 @@ let searchForm = {
 };
 function getJinHuoPrices(noJinHuoPriceDatas) {
     if (noJinHuoPriceDatas == null) {
-        resolve('noJinHuoPriceDatas is null');
-        return;
+        return 'noJinHuoPriceDatas is null';
     }
     let keys = Object.keys(noJinHuoPriceDatas);
     if (keys.length <= 0) {
-        resolve('noJinHuoPriceDatas count is 0');
-        return;
+        return 'noJinHuoPriceDatas count is 0';
     }
 
-    searchForm.id = keys.join(',');
     console.log('getJinHuoPrices:' + searchForm.id);
     searchForm.pageSize = keys.length;
     return new Promise((resolve) => {
         try {
+            // eslint-disable-next-line no-undef
             $.get('https://mis.aplum.com/mis/apis/product-editor-api/index', searchForm, (res) => {
                 if (res.code === 0) {
                     let tableData = res.data.list;
@@ -1461,6 +1465,7 @@ function getJinHuoPrices(noJinHuoPriceDatas) {
 
 function tryDeleteBorrowedProduct(vue2App, pid) {
     try {
+        // eslint-disable-next-line no-undef
         $.ajax({
             url:
                 '/mis/borrow-ticket/detail-list?TBorrowTicketProductSearch%5Bborrow_ticket_id%5D=&TBorrowTicketProductSearch%5Bop_id%5D=&TBorrowTicketProductSearch%5Bcategory%5D=&TBorrowTicketProductSearch%5Bexpress_type%5D=&TBorrowTicketProductSearch%5Bproduct_id%5D=' +
@@ -1478,6 +1483,7 @@ function tryDeleteBorrowedProduct(vue2App, pid) {
                 } else {
                     console.log('tryDeleteBorrowedProduct borrowid =' + borrowid);
                 }
+                // eslint-disable-next-line no-undef
                 $.ajax({
                     url: '/mis/borrow-ticket/delete-product-new',
                     type: 'post',
