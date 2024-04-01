@@ -2,7 +2,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.2.7
+// @version             0.2.8
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -1084,7 +1084,7 @@ async function addProductsToWorksheet(workbook, worksheet, vue2App, isProductEdi
                     worksheet.addImage(imageId, {
                         tl: { col: column, row: row },
                         br: { col: column + 1, row: row + 1 },
-                        ext: { width: 100, height: 100 },
+                        // ext: { width: 100, height: 100},
                         editAs: 'undefined',
                     });
                 }
@@ -1147,13 +1147,27 @@ async function exportProducts2Excel(vue2App, imageCount, isProductEditor = false
     worksheet.pageSetup.horizontalCentered = true;
     worksheet.pageSetup.verticalCentered = true;
 
-    let columnStyle = { alignment: { vertical: 'middle', horizontal: 'center', wrapText: true } };
+    let columnStyle = {
+        alignment: { vertical: 'middle', horizontal: 'center', wrapText: true },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } },
+        border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } },
+    };
+    let redCorlorStyle = {
+        alignment: { vertical: 'middle', horizontal: 'center', wrapText: true },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE9D9' } },
+        border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } },
+    };
+    let greenCorlorStyle = {
+        alignment: { vertical: 'middle', horizontal: 'center', wrapText: true },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEBF1DE' } },
+        border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } },
+    };
     let columns = [
         { header: 'id', key: 'id', width: 9, style: columnStyle },
         // { header: 'brand-name', key: 'brand-name', width: 15, style: columnStyle },
-        { header: '抖音价', key: 'dy_sale_price', width: 8, style: columnStyle }, //p_discount_price 折扣价目前无权限获取
+        { header: '抖音价', key: 'dy_sale_price', width: 8, style: redCorlorStyle }, //p_discount_price 折扣价目前无权限获取
         { header: '进货价', key: 'jinHuoPrice', width: 8, style: columnStyle },
-        { header: '利润', key: 'liRun', width: 6, style: columnStyle },
+        { header: '利润', key: 'liRun', width: 6, style: greenCorlorStyle },
         // { header: '最低价', key: 'ppd_outer_lowest_price', width: 8, style: columnStyle },
         // { header: isProductEditor ? '状态' : '借出状态', key: isProductEditor ? 'statusText' : 'lend_status', width: 6, style: columnStyle },
         { header: '库位', key: 'wms_sp_shelf_code', width: 10, style: columnStyle },
