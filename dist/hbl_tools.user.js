@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.2.8
+// @version             0.2.9
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -744,7 +744,7 @@ async function processViewDouyinLive() {
                 for (let p_id in noJinHuoPriceDatas) {
                     let data = noJinHuoPriceDatas[p_id];
                     try {
-                        if (data.jinHuoPrice > 0) {
+                        if (data?.jinHuoPrice > 0) {
                             data.jinHuoPriceEle.textContent = '进货价:' + data.jinHuoPrice;
                             data.jinHuoPriceEle = null;
                             data.liRunEle.textContent = '利润:' + data.liRun;
@@ -1432,7 +1432,7 @@ function getJinHuoPrices(noJinHuoPriceDatas) {
     if (keys.length <= 0) {
         return 'noJinHuoPriceDatas count is 0';
     }
-
+    searchForm.id = keys.join(',');
     console.log('getJinHuoPrices:' + searchForm.id);
     searchForm.pageSize = keys.length;
     return new Promise((resolve) => {
@@ -1447,8 +1447,10 @@ function getJinHuoPrices(noJinHuoPriceDatas) {
                         tableData.forEach((data) => {
                             try {
                                 let noJinHuoPriceData = noJinHuoPriceDatas[data.productId];
-                                noJinHuoPriceData.jinHuoPrice = parseInt(data.productPrice.match(/进货价：(\d+)/)[1]);
-                                noJinHuoPriceData.liRun = parseInt(noJinHuoPriceData.dy_sale_price) - noJinHuoPriceData.jinHuoPrice;
+                                if (noJinHuoPriceData != null) {
+                                    noJinHuoPriceData.jinHuoPrice = parseInt(data.productPrice.match(/进货价：(\d+)/)[1]);
+                                    noJinHuoPriceData.liRun = parseInt(noJinHuoPriceData.dy_sale_price) - noJinHuoPriceData.jinHuoPrice;
+                                }
                             } catch (error) {
                                 console.log(error);
                             }
