@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://fengxing.hbl.com/
-// @version             0.3.0
+// @version             0.3.1
 // @description         hbl_tools useful
 // @author              fengxing
 // @copyright           fengxing
@@ -1030,12 +1030,13 @@ async function addProductsToWorksheet(workbook, worksheet, vue2App, isProductEdi
                     hyperlink: pUrl,
                     tooltip: pUrl,
                 },
+                ' ', //主图
+                t.warehouseInfo ?? t.wms_sp_shelf_code ?? '', //暂时不要地点名，只要编号t.wms_w_name + ' '
                 // t.brand_name ? t.brand_name + '-' + t.p_name : t.brandName + '-' + t.productName,
                 Math.floor(t.dy_sale_price ?? '未获取'),
                 t.jinHuoPrice ?? '未获取',
                 t.liRun ?? '未获取',
                 // t.lend_status ?? t.statusText,
-                t.warehouseInfo ?? t.wms_w_name + ' ' + t.wms_sp_shelf_code ?? '',
                 // t.p_onsale_time ?? t.onSaleTime?.replaceAll('<br>', ' '),
             ]);
 
@@ -1073,7 +1074,7 @@ async function addProductsToWorksheet(workbook, worksheet, vue2App, isProductEdi
                         type: 'success',
                         message: '正在下载:第(' + (index + 1) + '/' + products.length + ')个商品的(' + (index2 + 1) + '/' + imageCount + ')张图片',
                     });
-                    let url = photoUrls[index2] + '?imageMogr2/thumbnail/300'; //缩放一下，否则太大了
+                    let url = photoUrls[index2] + '?imageMogr2/thumbnail/200'; //缩放一下，否则太大了
                     base64Data = await imageToBase64(url);
                     if (!base64Data.includes('失败')) {
                         photo_base64s[index2] = base64Data;
@@ -1148,7 +1149,7 @@ async function exportProducts2Excel(vue2App, imageCount, isProductEditor = false
     // eslint-disable-next-line no-undef
     const workbook = new ExcelJS.Workbook();
     // 创建一个冻结了第一行和第一列的工作表
-    const worksheet = workbook.addWorksheet('sheet1', { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] });
+    const worksheet = workbook.addWorksheet('sheet1', { views: [{ state: 'frozen', xSplit: 1, ySplit: 1 }] });
     worksheet.properties.defaultRowHeight = 100;
     worksheet.pageSetup.horizontalCentered = true;
     worksheet.pageSetup.verticalCentered = true;
@@ -1168,24 +1169,35 @@ async function exportProducts2Excel(vue2App, imageCount, isProductEditor = false
         fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEBF1DE' } },
         border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } },
     };
+    let imageCorlorStyle = {
+        alignment: { vertical: 'middle', horizontal: 'center', wrapText: true },
+        border: { top: { style: 'thin' }, left: { style: 'thick', color: { argb: 'FF00FF00' } }, bottom: { style: 'thin' }, right: { style: 'thick', color: { argb: 'FF00FF00' } } },
+    };
     let columns = [
         { header: 'id', key: 'id', width: 9, style: columnStyle },
         // { header: 'brand-name', key: 'brand-name', width: 15, style: columnStyle },
-        { header: '抖音价', key: 'dy_sale_price', width: 8, style: redCorlorStyle }, //p_discount_price 折扣价目前无权限获取
-        { header: '进货价', key: 'jinHuoPrice', width: 8, style: columnStyle },
+        { header: '库位', key: 'wms_sp_shelf_code', width: 13, style: columnStyle },
+        { header: '抖价', key: 'dy_sale_price', width: 8, style: redCorlorStyle }, //p_discount_price 折扣价目前无权限获取
+        { header: '进价', key: 'jinHuoPrice', width: 8, style: columnStyle },
         { header: '利润', key: 'liRun', width: 6, style: greenCorlorStyle },
         // { header: '最低价', key: 'ppd_outer_lowest_price', width: 8, style: columnStyle },
         // { header: isProductEditor ? '状态' : '借出状态', key: isProductEditor ? 'statusText' : 'lend_status', width: 6, style: columnStyle },
-        { header: '库位', key: 'wms_sp_shelf_code', width: 10, style: columnStyle },
         // { header: '首次在售时间', key: 'p_onsale_time', width: 12, style: columnStyle },
     ];
     let imageStartIndex = columns.length;
 
-    for (let i = 1; i <= imageCount; i++) {
-        if (i == 2) {
-            columns.push({ header: '图' + i + '(全套图)', key: 'image' + i, width: 20, style: columnStyle });
-        } else {
-            columns.push({ header: '图' + i, key: 'image' + i, width: 20, style: columnStyle });
+    if (imageCount == 1) {
+        //只有一个图的时候，图放到第二列
+        columns.splice(1, 0, { header: '图1', key: 'image1', width: 16, style: imageCorlorStyle });
+        imageStartIndex = 1;
+    } else {
+        //多图的时候，图放在最后几列
+        for (let i = 1; i <= imageCount; i++) {
+            if (i == 2) {
+                columns.push({ header: '图' + i + '(全套图)', key: 'image' + i, width: 20, style: greenCorlorStyle });
+            } else {
+                columns.push({ header: '图' + i, key: 'image' + i, width: 20, style: greenCorlorStyle });
+            }
         }
     }
     worksheet.columns = columns;
