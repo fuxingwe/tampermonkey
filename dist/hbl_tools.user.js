@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name                hbl_tools
-// @namespace           https://fengxing.hbl.com/
+// @namespace           https://feng.hbl.com/
 // @version             0.3.1
 // @description         hbl_tools useful
-// @author              fengxing
-// @copyright           fengxing
+// @author              feng
+// @copyright           feng
 // @license             MIT
 // @match               *://*.aplum.com/mis/*
 // @match               *://fxg.jinritemai.com/ffa/g/create*
