@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.3.1
+// @version             0.3.3
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -1283,11 +1283,11 @@ function processAllProducts(vue2App) {
                     parentEle.innerHTML = parentEle.innerHTML.replace(/<br>智能定价当前到手价.*<br>/, '<br>');
                     parentEle.innerHTML = parentEle.innerHTML.replace(/<br>进货价[^<]*/, '');
 
-                    let prefix = '<br>';
-                    if (parentEle.previousElementSibling.textContent.length > 7) {
-                        prefix = '';
-                    }
-                    priceEles[0].innerHTML = priceEles[0].innerHTML.replace('.00', '').replace('抖音', prefix + '抖音');
+                    // let prefix = '<br>';
+                    // if (parentEle.previousElementSibling.textContent.includes('已确认-智能定价')) {
+                    //     prefix = '';
+                    // }
+                    priceEles[0].innerHTML = priceEles[0].innerHTML.replace('.00', '&nbsp&nbsp&nbsp&nbsp'); //.replace('抖音', prefix + '抖音');
 
                     let douyinPrice = parseInt(priceEles[0].textContent.match(/(\d+)/)[1]);
                     vue2App.tableData[i].dy_sale_price = douyinPrice;
