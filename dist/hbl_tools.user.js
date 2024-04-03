@@ -756,7 +756,9 @@ async function processViewDouyinLive() {
                                 cachedProductsMap[data.p_id] = data;
                             }
                         } else {
+                            //有时候商品会再次变为编辑中，商品页刷不到编辑中和售出的，无法获取对应价格
                             needRequestPrice = true;
+                            console.log(p_id + '没有获取到进货价：' + data?.jinHuoPrice);
                         }
                     } catch (error) {
                         needRequestPrice = true;
@@ -765,13 +767,13 @@ async function processViewDouyinLive() {
                 }
                 if (needRequestPrice) {
                     failCount += 1;
-                    tipMsg = `请求失败，还有价格没获取成功，${failCount}分钟之后再请求价格信息:${msg}`;
+                    tipMsg = `请求失败，还有价格没获取成功，${failCount * failCount}分钟之后再请求价格信息:${msg}`;
                     console.log(tipMsg);
                     vue2App.$message({
                         type: 'error',
                         message: tipMsg,
                     });
-                    await sleep(60000 * failCount);
+                    await sleep(60000 * failCount * failCount);
                 } else {
                     failCount = 0;
                 }
