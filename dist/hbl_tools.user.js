@@ -241,7 +241,7 @@ let searchActivityForm = {
                 finished = false;
             }
             if (finished) {
-                Toast(`已自动填写标题、编号(${params.pid})、价格(${params.price})，请检查是否正确，并手动上传图片(已自动下载到默认目录)`, 20000);
+                Toast(`已自动填写标题、编号(${params.pid})、价格(${params.price})，请检查是否正确，并手动上传图片(已自动下载到默认目录)`, 40000);
                 break;
             }
         }
