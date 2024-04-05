@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.3.5
+// @version             0.3.6
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -283,14 +283,21 @@ async function getDouDianProducts(pid) {
     return new Promise((resolve) => {
         try {
             // eslint-disable-next-line no-undef
-            $.get(`https://fxg.jinritemai.com/product/tproduct/list?page=0&pageSize=20&id_name_code=${pid}`, function (res) {
-                console.log('getDouDianProducts success:' + res.msg);
-                if (res.code === 0) {
-                    resolve(res.data);
-                } else {
+            fetch(`https://fxg.jinritemai.com/product/tproduct/list?page=0&pageSize=20&id_name_code=${pid}`)
+                .then((response) => {
+                    let res = response.json();
+                    console.log('getDouDianProducts success:' + res.msg);
+                    if (res.code === 0) {
+                        resolve(res.data);
+                    } else {
+                        resolve(null);
+                    }
+                })
+                .then((data) => console.log(data))
+                .catch((error) => {
+                    console.error('Error:', error);
                     resolve(null);
-                }
-            });
+                });
         } catch (error) {
             console.log(error);
             resolve(null);
