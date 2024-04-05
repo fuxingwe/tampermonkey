@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.3.7
+// @version             0.3.8
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -256,7 +256,7 @@ let searchActivityForm = {
                     let product = douDianProducts[0];
                     // eslint-disable-next-line no-undef
                     GM_setClipboard(product.product_url_for_copy);
-                    Toast(`提交成功、商品链接已自动复制，粘贴即可(${product.product_url_for_copy})`, 30000);
+                    Toast(`链接已自动复制,粘贴即可(${product.product_url_for_copy})`, 30000);
                     break;
                 }
             }
