@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.3.4
+// @version             0.3.5
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -71,7 +71,7 @@ let searchActivityForm = {
         tryClickPriceEle(document.getElementById('cur_price_mask'));
         tryClickPriceEle(document.getElementById('dy_lowest_sale_price_mask'));
         let url = window.location.href;
-        if (!url.includes('?tab=base_info')) {
+        if (url.includes('?tab=') && !url.includes('?tab=base_info')) {
             // let vue2App = document.getElementById('vue2-app').__vue__;
             // vue2App.$message({
             //     type: 'success',
