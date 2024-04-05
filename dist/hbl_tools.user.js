@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.3.3
+// @version             0.3.4
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -70,19 +70,32 @@ let searchActivityForm = {
         tryClickPriceEle(document.getElementById('pangu_guide_price_mask'));
         tryClickPriceEle(document.getElementById('cur_price_mask'));
         tryClickPriceEle(document.getElementById('dy_lowest_sale_price_mask'));
-
+        let url = window.location.href;
+        if (!url.includes('?tab=base_info')) {
+            // let vue2App = document.getElementById('vue2-app').__vue__;
+            // vue2App.$message({
+            //     type: 'success',
+            //     message: '获取不到价格信息，请切换到基本信息标签页,才支持导入抖店',
+            // });
+            return;
+        }
         let parentEle = document.getElementsByClassName('col-md-7')[0];
         let pidEle = parentEle?.firstChild;
         if (pidEle == null) {
             return;
         }
+        let pid = pidEle.textContent;
+        let priceEle = document.getElementsByClassName('text-danger')[0];
+        let price = priceEle?.textContent?.match(/(\d+)/)[1];
+        let series = document.getElementsByClassName('col-md-7')[1]?.firstChild?.lastChild?.lastChild?.textContent;
+        let imageEles = document.getElementsByClassName('img-responsive');
         let activites = await getActivities();
         if (activites?.length <= 0) {
-            addExportDouDianButton(null, parentEle, pidEle);
+            addExportDouDianButton(null, parentEle, pid, series, price, imageEles);
         } else {
             let count = Math.min(3, activites.length);
             for (let i = activites.length - 1; i >= activites.length - count; i--) {
-                addExportDouDianButton(activites[i], parentEle, pidEle);
+                addExportDouDianButton(activites[i], parentEle, pid, series, price, imageEles);
             }
         }
     } else if (pathname.endsWith('/toonsale/view')) {
@@ -228,8 +241,24 @@ let searchActivityForm = {
                 finished = false;
             }
             if (finished) {
-                Toast('已自动填写标题、编号、价格，请检查是否正确，并手动上传图片(已自动下载到默认目录)', 100000);
+                Toast(`已自动填写标题、编号(${params.pid})、价格(${params.price})，请检查是否正确，并手动上传图片(已自动下载到默认目录)`, 20000);
                 break;
+            }
+        }
+
+        //eslint-disable-next-line no-constant-condition
+        while (true) {
+            console.log('waiting for save completed');
+            await sleep(1000);
+            if (document.body.textContent.includes('提交成功')) {
+                let douDianProducts = await getDouDianProducts(params.pid);
+                if (douDianProducts != null && douDianProducts.length > 0) {
+                    let product = douDianProducts[0];
+                    // eslint-disable-next-line no-undef
+                    GM_setClipboard(product.product_url_for_copy);
+                    Toast(`提交成功、商品链接已自动复制，粘贴即可(${product.product_url_for_copy})`, 30000);
+                    break;
+                }
             }
         }
     }
@@ -248,6 +277,25 @@ function setReactInputValue(element, value) {
         tracker.setValue(lastValue);
     }
     element.dispatchEvent(inputEvent);
+}
+
+async function getDouDianProducts(pid) {
+    return new Promise((resolve) => {
+        try {
+            // eslint-disable-next-line no-undef
+            $.get(`https://fxg.jinritemai.com/product/tproduct/list?page=0&pageSize=20&id_name_code=${pid}`, function (res) {
+                console.log('getDouDianProducts success:' + res.msg);
+                if (res.code === 0) {
+                    resolve(res.data);
+                } else {
+                    resolve(null);
+                }
+            });
+        } catch (error) {
+            console.log(error);
+            resolve(null);
+        }
+    });
 }
 
 async function getActivities() {
@@ -312,7 +360,7 @@ async function getUsers() {
     });
 }
 
-function addExportDouDianButton(activity, parentEle, pidEle) {
+function addExportDouDianButton(activity, parentEle, pid, series, price, imageEles) {
     let btn = document.createElement('button');
     btn.textContent = '导入抖店' + (activity ? '-' + activity.room_name : '');
     btn.className = 'btn btn-sm btn-primary';
@@ -326,11 +374,6 @@ function addExportDouDianButton(activity, parentEle, pidEle) {
     parentEle.insertBefore(btn, parentEle.lastChild);
     btn.addEventListener('click', () => {
         let vue2App = document.getElementById('vue2-app').__vue__;
-        let pid = pidEle.textContent;
-        let priceEle = document.getElementsByClassName('text-danger')[0];
-        let price = priceEle.textContent?.match(/(\d+)/)[1];
-        let series = document.getElementsByClassName('col-md-7')[1]?.firstChild?.lastChild?.lastChild?.textContent;
-        let imageEles = document.getElementsByClassName('img-responsive');
         if (imageEles != null && imageEles.length > 0) {
             vue2App.$message({
                 type: 'success',
