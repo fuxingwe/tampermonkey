@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.3.9
+// @version             0.4.0
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -46,17 +46,17 @@ let searchActivityForm = {
 (async function () {
     console.log('hbl_tools start');
     let pathname = location.pathname;
+    console.log(pathname);
     if (pathname.endsWith('/mis/modal/borrow')) {
+        processBorrowTip();
         return;
     }
-    console.log(pathname);
     if (!pathname.endsWith('/ffa/g/create')) {
         let enable = await checkEnable();
         console.log('checkEnable:' + enable);
         if (!enable) {
             return;
         }
-        processBorrowTip();
     }
 
     if (pathname.endsWith('/activity-new/view-douyin-live')) {
@@ -1394,10 +1394,26 @@ function getCurrentTimeFormatted() {
     return `${year}-${month}-${day}_${hours}-${minutes}-${seconds}`;
 }
 
-function processBorrowTip() {
+async function processBorrowTip() {
     try {
-        //检测到借出提示，就把倒计时设置为1秒
-        document.getElementsByClassName('global-modal-div')[0].getElementsByTagName('span')[0].textContent = 1;
+        let times = 0;
+        while (times <= 10) {
+            console.log('waiting for borrow tip visible');
+            await sleep(1000);
+            //关闭按钮在iframe的父窗口上
+            var sNum = window.parent.$('#global-modal-div').find('span').text();
+            if (sNum > 0) {
+                //检测到借出提示，就把倒计时设置到结束
+                window.parent.$('#global-modal-div').find('span').text(0);
+                return;
+            }
+            // let tipTextEle = window.parent.document.getElementById('global-modal-div')?.getElementsByTagName('span')[0];
+            // if (tipTextEle != null) {
+            //     tipTextEle.textContent = 1;
+            //     return;
+            // }
+            times++;
+        }
     } catch (error) {
         // console.log(error)
     }
