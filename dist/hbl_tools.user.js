@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.4.0
+// @version             0.4.1
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
 // @license             MIT
 // @match               *://*.aplum.com/mis/*
 // @match               *://fxg.jinritemai.com/ffa/g/create*
+// @match               *://live.douyin.com/*
 // @run-at              document-idle
 // @supportURL          https://baidu.com
 // @homepage            https://baidu.com
@@ -51,7 +52,7 @@ let searchActivityForm = {
         processBorrowTip();
         return;
     }
-    if (!pathname.endsWith('/ffa/g/create')) {
+    if (location.href.includes('aplum.com/')) {
         let enable = await checkEnable();
         console.log('checkEnable:' + enable);
         if (!enable) {
@@ -261,6 +262,64 @@ let searchActivityForm = {
                 }
             }
         }
+    } else if (location.href.includes('//live.douyin.com/')) {
+        let page = document.getElementsByTagName('body')[0];
+        console.log('page', page);
+        let autoDianZhanBtn = document.createElement('p');
+        autoDianZhanBtn.className = 'autoDianZhanBtn';
+        autoDianZhanBtn.innerHTML = '开始<br/>点赞';
+        page.append(autoDianZhanBtn);
+        let total = document.createElement('div');
+        total.className = 'total';
+        total.innerHTML = '<p class="text">点赞数：</p><p class="autoDianZhanBtn-all">0</p>';
+        page.append(total);
+
+        let num = document.getElementsByClassName('autoDianZhanBtn-all')[0];
+        console.log('num', num);
+        num.innerHTML = 0;
+        let isStarted = false;
+
+        const a = document.createEvent('MouseEvents');
+        a.clientX = 100;
+        a.clientY = 100;
+        a.initEvent('click', true, true);
+        let clickEle = null;
+        // 设置点赞间隔，最好是0.6秒一次，不然会提示手速太快,目前一小时总共可以3000次？
+        const interval = 600;
+        autoDianZhanBtn.addEventListener('click', () => {
+            isStarted = !isStarted;
+            if (!isStarted) {
+                window.dzanTimer && clearInterval(window.dzanTimer);
+                autoDianZhanBtn.innerHTML = '开始<br/>点赞';
+                return;
+            }
+            console.log('执行点赞脚本');
+            autoDianZhanBtn.innerHTML = '停止<br/>点赞';
+            let count = 0;
+            window.dzanTimer && clearInterval(window.dzanTimer);
+            window.dzanTimer = setInterval(async () => {
+                if (clickEle == null) {
+                    clickEle = document.querySelector('.LO5TGkc0');
+                    if (clickEle == null) {
+                        console.log('waiting for clickEle');
+                        return;
+                    }
+                }
+                if (document.body.textContent.includes('手速太快了')) {
+                    console.log('提示手速太快了，暂停一会');
+                    await sleep(10000);
+                    return;
+                }
+                clickEle?.dispatchEvent(a);
+                setTimeout(() => {
+                    //双击
+                    clickEle?.dispatchEvent(a);
+                    console.log('点赞+' + ++count);
+                    num.innerHTML = count;
+                }, 100);
+            }, interval);
+        });
+        // }
     }
 })();
 
@@ -775,13 +834,13 @@ async function processViewDouyinLive() {
 
             if (msg.includes('频繁')) {
                 failCount += 1;
-                let tipMsg = `提示请求频繁，${failCount * 2}分钟之后再请求价格信息:${msg}`;
+                let tipMsg = `提示请求频繁，${failCount * 10}分钟之后再请求价格信息:${msg}`;
                 console.log(tipMsg);
                 vue2App.$message({
                     type: 'error',
                     message: tipMsg,
                 });
-                await sleep(120000 * failCount);
+                await sleep(600000 * failCount);
             } else {
                 let tipMsg = '请求价格详情，结果:' + msg;
                 console.log(tipMsg);
@@ -1631,6 +1690,29 @@ function getCookie(name) {
     return null; //如果没有找到指定的 cookie，返回 null
 }
 
+// 监听元素, 找到后执行回调
+// eslint-disable-next-line no-unused-vars
+function waitForElement(classNameOrId, callback, interval = 1000) {
+    var lastInvocation = 0;
+    function checkForElement() {
+        var now = Date.now();
+        if (now - lastInvocation > interval) {
+            var element = document.querySelector(classNameOrId);
+            if (element) {
+                console.log(`🟢找到 "${classNameOrId}" 的元素`);
+                callback(element);
+            } else {
+                console.log(`🔴未找到 "${classNameOrId}" 的元素`);
+                lastInvocation = now;
+                requestAnimationFrame(checkForElement);
+            }
+        } else {
+            requestAnimationFrame(checkForElement);
+        }
+    }
+    checkForElement();
+}
+
 //异步等待元素的Visibility变为指定值
 // eslint-disable-next-line no-unused-vars
 async function waitForElementVisibility(element, timeoutInSeconds, visibility) {
@@ -1981,3 +2063,67 @@ function getURLParams() {
 
     return params;
 }
+
+//抖音直播自动点赞按钮添加样式
+function addGlobalStyle(css) {
+    var head, style;
+    head = document.getElementsByTagName('head')[0];
+    if (!head) {
+        return;
+    }
+    style = document.createElement('style');
+    style.type = 'text/css';
+    style.innerHTML = css;
+    head.appendChild(style);
+}
+
+addGlobalStyle(
+    `.autoDianZhanBtn {
+        content: '';
+        font-size: 14px;
+        position: fixed;
+        top: 70px;right: 30px;
+        z-index: 500;
+        cursor: pointer;
+        background: #3eaf7c;
+        border-radius: 50%;
+        color: #ff0;
+        display: block;
+        width: 46px;height: 46px;
+        line-height: 16px;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all ease 0.3s;
+
+    }
+    .autoDianZhanBtn:hover {
+        background-color: #4abf8a;
+        transform: rotate(360deg)
+    }
+
+
+    .total {
+        font-size: 14px;
+        position: fixed;
+        top: 79px;
+        right: 85px;
+        z-index: 500;
+        background: #3eaf7c;
+        color: #ff0;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all ease 0.3s;
+        padding: 5px 8px;
+        border-radius: 20px;
+
+    }
+    .total p {
+        color:#ff0;
+    }
+
+    `
+);
