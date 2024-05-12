@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.4.1
+// @version             0.4.2
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -252,9 +252,14 @@ let searchActivityForm = {
             console.log('waiting for save completed');
             await sleep(1000);
             if (document.body.textContent.includes('提交成功')) {
+                // await sleep(2000);//创建成功后需要等待2s左右才能搜索到最新的商品和链接，否则可能是旧的
                 let douDianProducts = await getDouDianProducts(params.pid);
                 if (douDianProducts != null && douDianProducts.length > 0) {
                     let product = douDianProducts[0];
+                    if (Date.now() - new Date(product.create_time).getTime() > 60000) {
+                        console.log('获取到的不是最新的，尝试重新获取');
+                        continue;
+                    }
                     // eslint-disable-next-line no-undef
                     GM_setClipboard(product.product_url_for_copy);
                     Toast(`链接已自动复制,粘贴即可(${product.product_url_for_copy})`, 30000);
@@ -285,7 +290,7 @@ let searchActivityForm = {
         a.initEvent('click', true, true);
         let clickEle = null;
         // 设置点赞间隔，最好是0.6秒一次，不然会提示手速太快,目前一小时总共可以3000次？
-        const interval = 600;
+        let interval = 600;
         autoDianZhanBtn.addEventListener('click', () => {
             isStarted = !isStarted;
             if (!isStarted) {
@@ -316,6 +321,9 @@ let searchActivityForm = {
                     clickEle?.dispatchEvent(a);
                     console.log('点赞+' + ++count);
                     num.innerHTML = count;
+                    if (count == 3000) {
+                        interval = 1100;
+                    }
                 }, 100);
             }, interval);
         });
