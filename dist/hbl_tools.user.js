@@ -1037,10 +1037,12 @@ async function processFaSheProducts(vue2App) {
             let btn = btnParent.firstChild;
             let aid = btnParent.parentElement.nextElementSibling.nextElementSibling.textContent;
             try {
-                //隐藏掉较早的活动页
-                let startTimeStr = btnParent.parentElement.parentElement.children[8].textContent;
-                if (new Date(startTimeStr).getFullYear() < 2024) {
-                    btnParent.parentElement.parentElement.style.display = 'none';
+                if (aid != '80650') {
+                    //隐藏掉较早的活动页(除了80650这个特殊的占货页)
+                    let startTimeStr = btnParent.parentElement.parentElement.children[8].textContent;
+                    if (new Date(startTimeStr).getFullYear() < 2024) {
+                        btnParent.parentElement.parentElement.style.display = 'none';
+                    }
                 }
             } catch (error) {
                 console.log(error);
