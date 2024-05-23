@@ -290,7 +290,7 @@ let searchActivityForm = {
         a.initEvent('click', true, true);
         let clickEle = null;
         // 设置点赞间隔，最好是0.6秒一次，不然会提示手速太快,目前一小时总共可以3000次？
-        let interval = 600;
+        let interval = 800;
         autoDianZhanBtn.addEventListener('click', () => {
             isStarted = !isStarted;
             if (!isStarted) {
@@ -321,10 +321,11 @@ let searchActivityForm = {
                     clickEle?.dispatchEvent(a);
                     console.log('点赞+' + ++count);
                     num.innerHTML = count;
-                    if (count == 3000) {
-                        interval = 1100;
-                    }
                 }, 100);
+                if (count >= 3000) {
+                    interval = 1200;
+                    await sleep(300);
+                }
             }, interval);
         });
         // }
