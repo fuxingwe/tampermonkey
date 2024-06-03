@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.4.4
+// @version             0.4.5
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -290,7 +290,7 @@ let searchActivityForm = {
         a.initEvent('click', true, true);
         let clickEle = null;
         // 设置点赞间隔，最好是0.6秒一次，不然会提示手速太快,目前一小时总共可以3000次？
-        let interval = 800;
+        let interval = 700;
         autoDianZhanBtn.addEventListener('click', () => {
             isStarted = !isStarted;
             if (!isStarted) {
@@ -319,7 +319,7 @@ let searchActivityForm = {
                 setTimeout(() => {
                     //双击
                     clickEle?.dispatchEvent(a);
-                    console.log('点赞+' + ++count);
+                    console.log(new Date().toLocaleString() + ' 点赞+' + ++count);
                     num.innerHTML = count;
                 }, 100);
                 if (count >= 3000) {
