@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.4.5
+// @version             0.4.6
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -290,19 +290,20 @@ let searchActivityForm = {
         a.initEvent('click', true, true);
         let clickEle = null;
         // 设置点赞间隔，最好是0.6秒一次，不然会提示手速太快,目前一小时总共可以3000次？
-        let interval = 700;
+        // 标签切到后台5分钟后setInterval方法的频率变为一分钟一次，这是浏览器的底层节能策略导致的
+        let interval = 1000;
         autoDianZhanBtn.addEventListener('click', () => {
             isStarted = !isStarted;
             if (!isStarted) {
-                window.dzanTimer && clearInterval(window.dzanTimer);
+                window.dzanTimer && workerTimer.clearInterval(window.dzanTimer);
                 autoDianZhanBtn.innerHTML = '开始<br/>点赞';
                 return;
             }
             console.log('执行点赞脚本');
             autoDianZhanBtn.innerHTML = '停止<br/>点赞';
             let count = 0;
-            window.dzanTimer && clearInterval(window.dzanTimer);
-            window.dzanTimer = setInterval(async () => {
+            window.dzanTimer && workerTimer.clearInterval(window.dzanTimer);
+            window.dzanTimer = workerTimer.setInterval(async () => {
                 if (clickEle == null) {
                     clickEle = document.querySelector('.LO5TGkc0');
                     if (clickEle == null) {
@@ -312,16 +313,20 @@ let searchActivityForm = {
                 }
                 if (document.body.textContent.includes('手速太快了')) {
                     console.log('提示手速太快了，暂停一会');
-                    await sleep(10000);
+                    await sleep(100000);
                     return;
                 }
                 clickEle?.dispatchEvent(a);
-                setTimeout(() => {
-                    //双击
-                    clickEle?.dispatchEvent(a);
-                    console.log(new Date().toLocaleString() + ' 点赞+' + ++count);
-                    num.innerHTML = count;
-                }, 100);
+                await sleep(100);
+                clickEle?.dispatchEvent(a);
+                console.log(new Date().toLocaleString() + ' 点赞+' + ++count);
+                num.innerHTML = count;
+                // setTimeout(() => {
+                //     //双击
+                //     clickEle?.dispatchEvent(a);
+                //     console.log(new Date().toLocaleString() + ' 点赞+' + ++count);
+                //     num.innerHTML = count;
+                // }, 100);
                 if (count >= 3000) {
                     interval = 1200;
                     await sleep(300);
@@ -2059,11 +2064,128 @@ function closeDB(db) {
 }
 
 /**
- * 实现sleep函数
+ * 实现sleep函数（js自身没有sleep函数）
  */
 function sleep(time) {
-    return new Promise((resolve) => setTimeout(resolve, time));
+    // return new Promise((resolve) => setTimeout(resolve, time));
+    //不使用setTimeout，因为浏览器页面进入后台后setTimeout的延迟时间不对，浏览器节能导致 https://blog.csdn.net/L435204/article/details/137959410
+    return new Promise((resolve) => {
+        let funtemp = function (time) {
+            setTimeout(function () {
+                self.postMessage(0);
+            }, time);
+        };
+        let worker = new Worker(window.URL.createObjectURL(new Blob(['(' + funtemp.toString() + ')(' + time + ')'])));
+        worker.onmessage = function () {
+            worker.terminate();
+            resolve();
+        };
+    });
 }
+
+//web worker实现setInterval
+//https://www.jianshu.com/p/99535d3b7fd7
+// Build a worker from an anonymous function body
+const blobURL = URL.createObjectURL(
+    new Blob(
+        [
+            '(',
+
+            function () {
+                const intervalIds = {};
+                let intervalId = null;
+
+                // 监听message 开始执行定时器或者销毁
+                self.onmessage = function onMsgFunc(e) {
+                    switch (e.data.command) {
+                        case 'interval:start': // 开启定时器
+                            intervalId = setInterval(function () {
+                                postMessage({
+                                    message: 'interval:tick',
+                                    id: e.data.id,
+                                });
+                            }, e.data.interval);
+
+                            postMessage({
+                                message: 'interval:started',
+                                id: e.data.id,
+                            });
+
+                            intervalIds[e.data.id] = intervalId;
+                            break;
+                        case 'interval:clear': // 销毁
+                            clearInterval(intervalIds[e.data.id]);
+
+                            postMessage({
+                                message: 'interval:cleared',
+                                id: e.data.id,
+                            });
+
+                            delete intervalIds[e.data.id];
+                            break;
+                    }
+                };
+            }.toString(),
+
+            ')()',
+        ],
+        { type: 'application/javascript' }
+    )
+);
+
+const worker = new Worker(blobURL);
+
+URL.revokeObjectURL(blobURL);
+
+const workerTimer = {
+    id: 0,
+    callbacks: {},
+    setInterval: function (cb, interval, context) {
+        this.id++;
+        const id = this.id;
+        this.callbacks[id] = { fn: cb, context: context };
+        worker.postMessage({
+            command: 'interval:start',
+            interval: interval,
+            id: id,
+        });
+        return id;
+    },
+    setTimeout: function (cb, timeout, context) {
+        this.id++;
+        const id = this.id;
+        this.callbacks[id] = { fn: cb, context: context };
+        worker.postMessage({ command: 'timeout:start', timeout: timeout, id: id });
+        return id;
+    },
+
+    // 监听worker 里面的定时器发送的message 然后执行回调函数
+    onMessage: function (e) {
+        switch (e.data.message) {
+            case 'interval:tick':
+            case 'timeout:tick': {
+                const callbackItem = this.callbacks[e.data.id];
+                if (callbackItem && callbackItem.fn) callbackItem.fn.apply(callbackItem.context);
+                break;
+            }
+
+            case 'interval:cleared':
+            case 'timeout:cleared':
+                delete this.callbacks[e.data.id];
+                break;
+        }
+    },
+
+    // 往worker里面发送销毁指令
+    clearInterval: function (id) {
+        worker.postMessage({ command: 'interval:clear', id: id });
+    },
+    clearTimeout: function (id) {
+        worker.postMessage({ command: 'timeout:clear', id: id });
+    },
+};
+
+worker.onmessage = workerTimer.onMessage.bind(workerTimer);
 
 function getURLParams() {
     const urlParams = new URLSearchParams(window.location.search);
