@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.4.6
+// @version             0.4.7
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -314,6 +314,11 @@ let searchActivityForm = {
                 if (document.body.textContent.includes('手速太快了')) {
                     console.log('提示手速太快了，暂停一会');
                     await sleep(100000);
+                    return;
+                }
+                if (document.body.textContent.includes('直播已结束')) {
+                    console.log('提示直播已结束，暂停一段时间');
+                    await sleep(3600000);
                     return;
                 }
                 clickEle?.dispatchEvent(a);
