@@ -520,10 +520,10 @@ async function processViewDouyinLive() {
         });
     });
 
-    let deleteBtn = btn.cloneNode(true);
-    deleteBtn.textContent = '批量删除(支持删借出)';
-    group.appendChild(deleteBtn);
-    deleteBtn.addEventListener('click', () => {
+    btn = btn.cloneNode(true);
+    btn.textContent = '批量删除(支持删借出)';
+    group.appendChild(btn);
+    btn.addEventListener('click', () => {
         if (!vue2App.checkSelectProduct()) {
             return;
         }
@@ -564,6 +564,31 @@ async function processViewDouyinLive() {
                             }
                         });
                 }, waitTime);
+            });
+    });
+
+    btn = btn.cloneNode(true);
+    btn.textContent = '批量取消借出';
+    group.appendChild(btn);
+    btn.addEventListener('click', () => {
+        if (!vue2App.checkSelectProduct()) {
+            return;
+        }
+        vue2App
+            .$confirm('确认要取消借出商品吗?', '提示', {
+                confirmButtonText: '确定',
+                cancelButtonText: '取消',
+                type: 'warning',
+            })
+            .then(() => {
+                let selectedProducts = vue2App.selectedProducts;
+                let waitTime = 0;
+                for (let i = 0; i < selectedProducts.length; i++) {
+                    if (selectedProducts[i].enable_delete === 0) {
+                        tryDeleteBorrowedProduct(vue2App, selectedProducts[i].p_id);
+                        waitTime = 2000;
+                    }
+                }
             });
     });
 
