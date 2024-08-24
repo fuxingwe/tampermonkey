@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.4.8
+// @version             0.4.9
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -534,14 +534,8 @@ async function processViewDouyinLive() {
                 type: 'warning',
             })
             .then(() => {
-                let selectedProducts = vue2App.selectedProducts;
-                let waitTime = 0;
-                for (let i = 0; i < selectedProducts.length; i++) {
-                    if (selectedProducts[i].enable_delete === 0) {
-                        tryDeleteBorrowedProduct(vue2App, selectedProducts[i].p_id);
-                        waitTime = 2000;
-                    }
-                }
+                tryDeleteSelectedBorrowedProduct(vue2App);
+                let waitTime = 2000;
 
                 //延迟调用活动页删除
                 setTimeout(() => {
@@ -580,15 +574,10 @@ async function processViewDouyinLive() {
                 cancelButtonText: '取消',
                 type: 'warning',
             })
-            .then(() => {
-                let selectedProducts = vue2App.selectedProducts;
-                let waitTime = 0;
-                for (let i = 0; i < selectedProducts.length; i++) {
-                    if (selectedProducts[i].enable_delete === 0) {
-                        tryDeleteBorrowedProduct(vue2App, selectedProducts[i].p_id);
-                        waitTime = 2000;
-                    }
-                }
+            .then(async () => {
+                tryDeleteSelectedBorrowedProduct(vue2App);
+                await sleep(2000);
+                vue2App.updateCardData();
             });
     });
 
@@ -1067,11 +1056,6 @@ async function processFaSheProducts(vue2App) {
             return;
         }
 
-        let excelRaw = await exportProducts2ExcelRaw(vue2App);
-        if (excelRaw == undefined) {
-            return;
-        }
-        formData.set('file', excelRaw, 'exports.xlsx');
         Array.from(rowEles).forEach((rowEle) => {
             let btnParent = rowEle.firstChild.firstChild;
             if (btnParent.childElementCount >= 2) {
@@ -1097,40 +1081,67 @@ async function processFaSheProducts(vue2App) {
             importBtn.style.background = 'green';
             btnParent.appendChild(importBtn);
             importBtn.addEventListener('click', () => {
-                formData.set('id', aid);
-                // eslint-disable-next-line no-undef
-                $.ajax({
-                    type: 'post',
-                    url: '/mis/activity/new-import-excel',
-                    // contentType: "multipart/form-data",
-                    cache: false, //上传文件无需缓存
-                    processData: false, //用于对data参数进行序列化处理 这里必须false
-                    contentType: false, //必须
-                    data: formData,
-                    success(result) {
-                        if (result.code === 0) {
-                            vue2App.$message({
-                                type: 'success',
-                                message: '导入成功! 2秒后自动打开目标活动页:' + aid,
-                            });
-                            setTimeout(() => {
-                                window.open('https://mis.aplum.com/mis/activity-new/view-douyin-live?id=' + aid);
-                            }, 2000);
-                        } else {
-                            vue2App.$message({
-                                type: 'error',
-                                message: result.msg,
-                            });
-                        }
-                    },
-                    error(xhr) {
-                        vue2App.$message({
-                            type: 'error',
-                            message: xhr.statusText,
-                        });
-                    },
-                });
+                exportProducts2Activity(aid, vue2App, false);
             });
+
+            importBtn = btn.cloneNode(true);
+            importBtn.textContent = '还借出再导入';
+            importBtn.style.background = 'green';
+            btnParent.appendChild(importBtn);
+            importBtn.addEventListener('click', () => {
+                exportProducts2Activity(aid, vue2App, true);
+            });
+        });
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+async function exportProducts2Activity(aid, vue2App, transferBorrow) {
+    try {
+        let excelRaw = await exportProducts2ExcelRaw(vue2App);
+        if (excelRaw == undefined) {
+            return;
+        }
+        formData.set('file', excelRaw, 'exports.xlsx');
+        formData.set('id', aid);
+        // eslint-disable-next-line no-undef
+        $.ajax({
+            type: 'post',
+            url: '/mis/activity/new-import-excel',
+            // contentType: "multipart/form-data",
+            cache: false, //上传文件无需缓存
+            processData: false, //用于对data参数进行序列化处理 这里必须false
+            contentType: false, //必须
+            data: formData,
+            success(result) {
+                if (result.code === 0) {
+                    if (transferBorrow) {
+                        tryDeleteSelectedBorrowedProduct(vue2App);
+                    }
+                    vue2App.$message({
+                        type: 'success',
+                        message: '导入成功! 2秒后自动打开目标活动页:' + aid,
+                    });
+                    setTimeout(() => {
+                        // if (transferBorrow) {//TODO 在活动页里查找获取最新的id，然后自动借出
+
+                        // }
+                        window.open('https://mis.aplum.com/mis/activity-new/view-douyin-live?id=' + aid);
+                    }, 2000);
+                } else {
+                    vue2App.$message({
+                        type: 'error',
+                        message: result.msg,
+                    });
+                }
+            },
+            error(xhr) {
+                vue2App.$message({
+                    type: 'error',
+                    message: xhr.statusText,
+                });
+            },
         });
     } catch (error) {
         console.log(error);
@@ -1650,6 +1661,22 @@ function getJinHuoPrices(noJinHuoPriceDatas) {
     });
 }
 
+function tryDeleteSelectedBorrowedProduct(vue2App) {
+    try {
+        let selectedProducts = vue2App.selectedProducts;
+        for (let i = 0; i < selectedProducts.length; i++) {
+            if (selectedProducts[i].enable_delete === 0) {
+                tryDeleteBorrowedProduct(vue2App, selectedProducts[i].p_id);
+            }
+        }
+        vue2App.$message({
+            type: 'success',
+            message: '取消借出成功',
+        });
+    } catch (error) {
+        console.log(error);
+    }
+}
 function tryDeleteBorrowedProduct(vue2App, pid) {
     try {
         // eslint-disable-next-line no-undef
