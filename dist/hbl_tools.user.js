@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.4.9
+// @version             0.5.0
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -1690,7 +1690,21 @@ function tryDeleteBorrowedProduct(vue2App, pid) {
             success(result) {
                 var parser = new DOMParser();
                 var doc = parser.parseFromString(result, 'text/html');
-                let borrowid = doc.getElementsByClassName('table table-striped table-bordered')[0].querySelector('tbody > tr').getAttribute('data-key');
+                var row = doc.getElementsByClassName('table table-striped table-bordered')[0].querySelector('tbody > tr');
+                if (row === null) {
+                    console.log('tryDeleteBorrowedProduct can not find row,pid =' + pid);
+                    return;
+                }
+                let rowText = row.innerText;
+                if (!(rowText.includes('唐天瑀 ') || rowText.includes('张儒崎') || rowText.includes('李佳乐'))) {
+                    console.log('tryDeleteBorrowedProduct skip not self borrow row,pid =' + pid);
+                    vue2App.$message({
+                        type: 'error',
+                        message: '该商品不是自己借的，不取消借出:' + pid,
+                    });
+                    return;
+                }
+                let borrowid = row.getAttribute('data-key');
                 if (borrowid === null) {
                     console.log('tryDeleteBorrowedProduct can not find borrowid,pid =' + pid);
                     return;
