@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.5.0
+// @version             0.5.1
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -1696,7 +1696,7 @@ function tryDeleteBorrowedProduct(vue2App, pid) {
                     return;
                 }
                 let rowText = row.innerText;
-                if (!(rowText.includes('唐天瑀 ') || rowText.includes('张儒崎') || rowText.includes('李佳乐'))) {
+                if (!(rowText.includes('唐天瑀') || rowText.includes('张儒崎') || rowText.includes('李佳乐'))) {
                     console.log('tryDeleteBorrowedProduct skip not self borrow row,pid =' + pid);
                     vue2App.$message({
                         type: 'error',
