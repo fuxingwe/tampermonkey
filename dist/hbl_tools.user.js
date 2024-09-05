@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.5.1
+// @version             0.5.2
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -1191,19 +1191,41 @@ async function addProductsToWorksheet(workbook, worksheet, vue2App, isProductEdi
 
         for (let index = 0; index < products.length; index++) {
             let t = products[index];
-            let pUrl = 'https://mis.aplum.com/mis/product/view?id=' + t.p_id ?? t.productId;
+            let pUrl = 'https://mis.aplum.com/mis/product/view?id=' + (t.p_id ?? t.productId);
+            let detailInfo = await getProductDetailInfo(pUrl);
+            if (detailInfo != null) {
+                t.detail_dy_id = detailInfo.detail_dy_id;
+                t.detail_components = detailInfo.detail_components;
+                t.detail_size = detailInfo.detail_size;
+                t.detail_isChip = detailInfo.detail_isChip;
+            }
+            if (t.detail_size == null || t.detail_size.length <= 0) {
+                if (t.tav_size != null) {
+                    t.detail_size = t.tav_size;
+                }
+            }
+            if (t.detail_components == null || t.detail_components.length <= 0) {
+                if (t.p_components != null) {
+                    t.detail_components = t.p_components;
+                }
+            }
+
             worksheet.addRow([
                 {
                     text: t.p_id ?? t.productId,
                     hyperlink: pUrl,
                     tooltip: pUrl,
                 },
+                t.detail_dy_id ?? '',
                 ' ', //主图
-                t.warehouseInfo ?? t.wms_sp_shelf_code ?? '', //暂时不要地点名，只要编号t.wms_w_name + ' '
+                t.warehouseInfo ?? t.wms_sp_shelf_code ?? '', //库位，暂时不要地点名，只要编号t.wms_w_name + ' '
                 // t.brand_name ? t.brand_name + '-' + t.p_name : t.brandName + '-' + t.productName,
                 Math.floor(t.dy_sale_price ?? '未获取'),
                 t.jinHuoPrice ?? '未获取',
                 t.liRun ?? '未获取',
+                t.detail_size ?? t.sku_all ?? t.p_name ?? t.productName ?? '',
+                t.detail_components ?? '',
+                t.detail_isChip ?? '',
                 // t.lend_status ?? t.statusText,
                 // t.p_onsale_time ?? t.onSaleTime?.replaceAll('<br>', ' '),
             ]);
@@ -1343,11 +1365,15 @@ async function exportProducts2Excel(vue2App, imageCount, isProductEditor = false
     };
     let columns = [
         { header: 'id', key: 'id', width: 9, style: columnStyle },
+        { header: 'dy_id', key: 'detail_dy_id', width: 9, style: redCorlorStyle },
         // { header: 'brand-name', key: 'brand-name', width: 15, style: columnStyle },
         { header: '库位', key: 'wms_sp_shelf_code', width: 13, style: columnStyle },
         { header: '抖价', key: 'dy_sale_price', width: 8, style: redCorlorStyle }, //p_discount_price 折扣价目前无权限获取
         { header: '进价', key: 'jinHuoPrice', width: 8, style: columnStyle },
         { header: '利润', key: 'liRun', width: 6, style: greenCorlorStyle },
+        { header: '尺寸', key: 'detail_size', width: 13, style: columnStyle },
+        { header: '配件', key: 'detail_components', width: 13, style: redCorlorStyle },
+        { header: '芯片', key: 'detail_isChip', width: 5, style: columnStyle },
         // { header: '最低价', key: 'ppd_outer_lowest_price', width: 8, style: columnStyle },
         // { header: isProductEditor ? '状态' : '借出状态', key: isProductEditor ? 'statusText' : 'lend_status', width: 6, style: columnStyle },
         // { header: '首次在售时间', key: 'p_onsale_time', width: 12, style: columnStyle },
@@ -1355,9 +1381,9 @@ async function exportProducts2Excel(vue2App, imageCount, isProductEditor = false
     let imageStartIndex = columns.length;
 
     if (imageCount == 1) {
-        //只有一个图的时候，图放到第二列
-        columns.splice(1, 0, { header: '图1', key: 'image1', width: 16, style: imageCorlorStyle });
-        imageStartIndex = 1;
+        //只有一个图的时候，图放到第3列
+        columns.splice(2, 0, { header: '图1', key: 'image1', width: 16, style: imageCorlorStyle });
+        imageStartIndex = 2;
     } else {
         //多图的时候，图放在最后几列
         for (let i = 1; i <= imageCount; i++) {
@@ -1407,6 +1433,55 @@ function imageToBase64(url) {
         image.onerror = () => {
             resolve('相片处理失败');
         };
+    });
+}
+
+// 获取商品详情页信息，抖音ID和详细描述
+async function getProductDetailInfo(url) {
+    return new Promise((resolve) => {
+        try {
+            fetch(url)
+                .then((response) => response.text())
+                .then((data) => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(data, 'text/html');
+                    // let vue2App = doc.getElementById('vue2-app').__vue__;
+                    let detailInfo = {};
+                    let ele = doc.querySelector('#vue2-app > div > div > div > div.row > div.col-md-7 > h3:nth-child(2)');
+                    if (ele != null && ele.innerText != null && ele.innerText.length > 0) {
+                        let ids = ele.innerText.match(/:(.+)/);
+                        if (ids != null && ids.length > 1) {
+                            detailInfo.detail_dy_id = ids[1].trim();
+                        }
+                    }
+                    ele = doc.querySelector('#vue2-app > div > div > div > div.ibox.product-detail > div:nth-child(1) > div > div.col-md-7 > small:nth-child(5)');
+                    if (ele != null && ele.innerText != null && ele.innerText.length > 0) {
+                        let innerText = ele.innerText.replaceAll(' ', '').replaceAll('\n', '');
+                        let detailStr = '';
+                        let info = innerText.match(/配件:([^|]*)/);
+                        if (info != null && info.length > 1) {
+                            detailInfo.detail_components = info[1].trim();
+                        }
+                        info = innerText.match(/尺寸:([^|]*)/);
+                        if (info != null && info.length > 1) {
+                            detailInfo.detail_size = info[1].trim();
+                        }
+                        info = innerText.match(/芯片款:([^|]*)/);
+                        if (info != null && info.length > 1) {
+                            detailInfo.detail_isChip = info[1].trim();
+                        }
+                    }
+                    // console.log(detailInfo);
+                    resolve(detailInfo);
+                })
+                .catch((err) => {
+                    console.log('err', err);
+                    resolve(null);
+                });
+        } catch (error) {
+            console.log(error);
+            resolve(null);
+        }
     });
 }
 
