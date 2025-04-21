@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.5.2
+// @version             0.5.3
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
@@ -291,7 +291,7 @@ let searchActivityForm = {
         let clickEle = null;
         // 设置点赞间隔，最好是0.6秒一次，不然会提示手速太快,目前一小时总共可以3000次？
         // 标签切到后台5分钟后setInterval方法的频率变为一分钟一次，这是浏览器的底层节能策略导致的
-        let interval = 1000;
+        let interval = 1200;
         autoDianZhanBtn.addEventListener('click', () => {
             isStarted = !isStarted;
             if (!isStarted) {
@@ -333,7 +333,7 @@ let searchActivityForm = {
                 //     num.innerHTML = count;
                 // }, 100);
                 if (count >= 3000) {
-                    interval = 1200;
+                    interval = 1400;
                     await sleep(300);
                 }
             }, interval);
