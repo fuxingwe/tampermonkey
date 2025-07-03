@@ -305,8 +305,14 @@ let searchActivityForm = {
             window.dzanTimer && workerTimer.clearInterval(window.dzanTimer);
             window.dzanTimer = workerTimer.setInterval(async () => {
                 if (clickEle == null) {
-                    clickEle = document.querySelector('.LO5TGkc0');
+				    if (clickEle == null) {
+						clickEle = document.querySelector('.LO5TGkc0');
+                    }
+					if (clickEle == null) {
+                        clickEle = document.querySelector('.PPcGIai7');
+                    }
                     if (clickEle == null) {
+						num.innerHTML = "waiting for clickEle";
                         console.log('waiting for clickEle');
                         return;
                     }
