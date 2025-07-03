@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name                hbl_tools
 // @namespace           https://feng.hbl.com/
-// @version             0.5.3
+// @version             0.5.4
 // @description         hbl_tools useful
 // @author              feng
 // @copyright           feng
