@@ -11,7 +11,7 @@
 // @supportURL          https://baidu.com
 // @homepage            https://baidu.com
 // @grant               GM_setClipboard
-// @icon                https://www.google.com/s2/favicons?domain=douyin.com
+// @icon                https://nav.programnotes.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=48&url=https://douyin.com
 // ==/UserScript==
 
 (async function () {
