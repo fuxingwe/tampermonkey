@@ -14,6 +14,8 @@
 // @icon                https://nav.programnotes.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=48&url=https://douyin.com
 // ==/UserScript==
 
+//设置插件允许访问文件网址然后通过下面两句直接浏览器中引用文件调试   // @match */*    和   // @require file://D:/dist/douyin.user.js
+
 (async function () {
     console.log('douyin tools start');
     if (location.href.includes('//live.douyin.com/')) {
