@@ -14,7 +14,7 @@
 // @icon                https://nav.programnotes.cn/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&size=48&url=https://douyin.com
 // ==/UserScript==
 
-//设置插件允许访问文件网址然后通过下面两句直接浏览器中引用文件调试   // @match */*    和   // @require file://D:/dist/douyin.user.js
+//直接复制上面注释的内容到油猴中（不需要复制下面的脚本代码），然后设置油猴插件允许访问文件网址，然后修改后面两句直接浏览器中引用文件调试   // @match */*    和   // @require file://D:/dist/douyin.user.js
 
 (async function () {
     console.log('douyin tools start');
