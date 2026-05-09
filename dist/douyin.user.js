@@ -100,33 +100,26 @@
 })();
 
 /**
- * 实现sleep函数（js自身没有sleep函数）
+ * 实现sleep函数 (基于常驻的 workerTimer 避免内存泄漏，js自身没有sleep函数)
  */
 function sleep(time) {
-    // return new Promise((resolve) => setTimeout(resolve, time));
+	 // return new Promise((resolve) => setTimeout(resolve, time));
     //不使用setTimeout，因为浏览器页面进入后台后setTimeout的延迟时间不对，浏览器节能导致 https://blog.csdn.net/L435204/article/details/137959410
     return new Promise((resolve) => {
-        let funtemp = function (time) {
-            setTimeout(function () {
-                self.postMessage(0);
-            }, time);
-        };
-        let worker = new Worker(window.URL.createObjectURL(new Blob(['(' + funtemp.toString() + ')(' + time + ')'])));
-        worker.onmessage = function () {
-            worker.terminate();
+        workerTimer.setTimeout(() => {
             resolve();
-        };
+        }, time);
     });
 }
 
 //web worker实现setInterval
 //https://www.jianshu.com/p/99535d3b7fd7
 // Build a worker from an anonymous function body
+// web worker实现setInterval和setTimeout
 const blobURL = URL.createObjectURL(
     new Blob(
         [
             '(',
-
             function () {
                 const intervalIds = {};
                 let intervalId = null;
@@ -149,20 +142,42 @@ const blobURL = URL.createObjectURL(
 
                             intervalIds[e.data.id] = intervalId;
                             break;
-                        case 'interval:clear': // 销毁
+                        case 'interval:clear': // 销毁定时器
                             clearInterval(intervalIds[e.data.id]);
-
                             postMessage({
                                 message: 'interval:cleared',
                                 id: e.data.id,
                             });
-
+                            delete intervalIds[e.data.id];
+                            break;
+                            
+                        // === 新增 setTimeout 逻辑 ===
+                        case 'timeout:start': // 开启延时器
+                            const timeoutId = setTimeout(function () {
+                                postMessage({
+                                    message: 'timeout:tick',
+                                    id: e.data.id,
+                                });
+                                // 延时器执行一次后自动销毁
+                                postMessage({
+                                    message: 'timeout:cleared',
+                                    id: e.data.id,
+                                });
+                                delete intervalIds[e.data.id];
+                            }, e.data.timeout);
+                            intervalIds[e.data.id] = timeoutId;
+                            break;
+                        case 'timeout:clear': // 提前销毁延时器
+                            clearTimeout(intervalIds[e.data.id]);
+                            postMessage({
+                                message: 'timeout:cleared',
+                                id: e.data.id,
+                            });
                             delete intervalIds[e.data.id];
                             break;
                     }
                 };
             }.toString(),
-
             ')()',
         ],
         { type: 'application/javascript' }
