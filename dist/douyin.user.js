@@ -78,19 +78,37 @@
                     await sleep(3600000);
                     return;
                 }
+
+                // ================= 核心防封逻辑开始 =================
+                
+                // 辅助函数：生成 min 到 max 之间的随机整数 (毫秒)
+                const getRandomDelay = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+                // 1. 基础间隔上的随机浮动：每次点赞前随机多等 0 ~ 400 毫秒
+                // 这样即使 interval 是 1200，实际点击间隔也会在 1200 ~ 1600 之间波动
+                await sleep(getRandomDelay(0, 400));
+
+                // 2. 模拟双击的真实感：两次点击的间隔从固定的 100ms 改为 60 ~ 150ms 随机
                 clickEle?.dispatchEvent(a);
-                await sleep(100);
+                await sleep(getRandomDelay(60, 150));
                 clickEle?.dispatchEvent(a);
-                console.log(new Date().toLocaleString() + ' 点赞+' + ++count);
+                
+                count++;
+                console.log(new Date().toLocaleString() + ' 点赞+' + count);
                 num.innerHTML = count;
-                // setTimeout(() => {
-                //     //双击
-                //     clickEle?.dispatchEvent(a);
-                //     console.log(new Date().toLocaleString() + ' 点赞+' + ++count);
-                //     num.innerHTML = count;
-                // }, 100);
+
+                // 3. 模拟人类疲劳停顿：每点赞大约 40 ~ 70 次，就随机休息 2 ~ 4 秒
+                // 使用随机的余数判断，防止每次都在整数次停顿
+                if (count % getRandomDelay(40, 70) === 0) {
+                    let restTime = getRandomDelay(2000, 4000);
+                    console.log(`模拟手指疲劳，停顿休息 ${restTime/1000} 秒...`);
+                    await sleep(restTime);
+                }
+
+                // ================= 核心防封逻辑结束 =================
+
                 if (count >= 3000) {
-                    interval = 1400;
+                    interval = 1400; // 超过3000次后，将底层的固定轮询间隔拉长
                     await sleep(300);
                 }
             }, interval);
