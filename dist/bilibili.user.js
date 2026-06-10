@@ -3,12 +3,13 @@
 // @namespace    BilibiliExp
 // @match        *://*.bilibili.com/*
 // @noframes
-// @version      3.1.1
+// @version      3.1.2
 // @author       Dreace & Repairer & Gemini
 // @description  真正的全自动化：自动随机抓取B站热门视频完成每日登录、观看、分享、投币任务。带全局唯一锁，防多开风控。
 // @grant        GM.xmlHttpRequest
 // @grant        GM.setValue
 // @grant        GM.getValue
+// @connect      bilibili.com
 // @run-at       document-end
 // ==/UserScript==
 
