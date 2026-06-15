@@ -3,17 +3,21 @@
 // @namespace    BilibiliExp
 // @match        *://*.bilibili.com/*
 // @noframes
-// @version      3.1.5
+// @version      3.1.7
 // @author       Dreace & Repairer & Gemini
-// @description  真正的全自动化：防劫持日志穿透版。自动随机抓取B站热门视频完成任务。
+// @description  真正的全自动化：增加防重入执行锁，防止手动触发冲突。
 // @grant        GM.xmlHttpRequest
 // @grant        GM.setValue
 // @grant        GM.getValue
+// @grant        GM_registerMenuCommand
 // @connect      bilibili.com
 // @run-at       document-end
 // ==/UserScript==
 
 "use strict";
+
+// 全局内存锁，用于防止页面内部瞬间重复触发
+let isRunning = false; 
 
 const NAV_URL = "https://api.bilibili.com/x/web-interface/nav";
 const REWARD_URL = "https://api.bilibili.com/x/member/web/exp/reward";
@@ -24,29 +28,29 @@ const HEARTBEAT_URL = "https://api.bilibili.com/x/click-interface/web/heartbeat"
 
 let bili_jct = "";
 
-// 日志时间戳格式化工具
 function getTimeStr() {
     let now = new Date();
-    let y = now.getFullYear();
-    let m = String(now.getMonth() + 1).padStart(2, '0');
-    let d = String(now.getDate()).padStart(2, '0');
-    let h = String(now.getHours()).padStart(2, '0');
-    let min = String(now.getMinutes()).padStart(2, '0');
-    let s = String(now.getSeconds()).padStart(2, '0');
-    return `[${y}-${m}-${d} ${h}:${min}:${s}]`;
+    return `[${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}]`;
 }
 
-// 全局日志劫持封装（核心修改：单字符串拼接 + CSS高亮穿透）
 const log = (msg, ...args) => {
-    if (args.length > 0) {
-        console.log(`%c${getTimeStr()} ${msg}`, "color: #00a1d6; font-weight: bold;", ...args);
-    } else {
-        console.log(`%c${getTimeStr()} ${msg}`, "color: #00a1d6; font-weight: bold;");
-    }
+    console.log(`%c${getTimeStr()} ${msg}`, "color: #00a1d6; font-weight: bold;", ...args);
 };
+
 const err = (msg, ...args) => {
     console.error(`${getTimeStr()} ${msg}`, ...args);
 };
+
+// 注册油猴菜单：手动强制执行按钮
+if (typeof GM_registerMenuCommand !== "undefined") {
+    GM_registerMenuCommand("🔄 强制重置并运行任务", async () => {
+        if (isRunning) return log("[BilibiliExp] ⚠️ 任务正在运行中，请勿重复点击。");
+        log("[BilibiliExp] 🔄 收到手动重置指令...");
+        await GM.setValue("BiliExp_LastDate", "");
+        await GM.setValue("BiliExp_Lock", 0);
+        await tryExecuteWorkflow();
+    });
+}
 
 // 异步初始化
 (async function() {
@@ -73,47 +77,40 @@ const err = (msg, ...args) => {
     }, 5000);
 })();
 
-// 核心控制
+// 核心执行逻辑：加入内存锁
 async function tryExecuteWorkflow() {
-    let currentDateStr = new Date().toDateString(); 
-    let lastRunDate = await GM.getValue("BiliExp_LastDate", "");
+    if (isRunning) return; // 内存锁：阻止单页面重复进入
+    isRunning = true;
     
-    log(`[BilibiliExp] 隐形守护线程触发检测。今日状态: ${lastRunDate === currentDateStr ? "✅ 已完成" : "⏳ 待执行"}`);
+    try {
+        let currentDateStr = new Date().toDateString(); 
+        let lastRunDate = await GM.getValue("BiliExp_LastDate", "");
+        
+        log(`[BilibiliExp] 守护线程触发检测。今日状态: ${lastRunDate === currentDateStr ? "✅ 已完成" : "⏳ 待执行"}`);
 
-    // 如果今天已经成功刷完了，直接退出
-    if (lastRunDate === currentDateStr) {
-        return; 
+        if (lastRunDate === currentDateStr) return;
+
+        let lockTime = await GM.getValue("BiliExp_Lock", 0);
+        if (Date.now() - lockTime < 5 * 60 * 1000) {
+            log("[BilibiliExp] 别的标签页正在执行，本页面跳过。");
+            return; 
+        }
+        
+        await GM.setValue("BiliExp_Lock", Date.now());
+        
+        let navRes = await gmAjax(NAV_URL);
+        if (navRes.code !== 0 || !navRes.data?.isLogin) {
+            log("[BilibiliExp] 未登录或无法获取状态。");
+            return;
+        }
+
+        bili_jct = getBiliJctFromCookie(navRes.cookieRaw);
+        await startHiddenTask(currentDateStr);
+        
+    } finally {
+        isRunning = false;
+        await GM.setValue("BiliExp_Lock", 0);
     }
-
-    // 抢占全局执行锁 (有效期5分钟)
-    let lockTime = await GM.getValue("BiliExp_Lock", 0);
-    if (Date.now() - lockTime < 5 * 60 * 1000) {
-        log("[BilibiliExp] 别的标签页正在执行任务，本页面静默。");
-        return; 
-    }
-    
-    // 成功抢锁
-    await GM.setValue("BiliExp_Lock", Date.now());
-    log("[BilibiliExp] 🚀 成功抢占全局挂机锁，开始在后台静默检测B站经验...");
-
-    // 检查B站登录状态
-    let navRes = await gmAjax(NAV_URL);
-    if (navRes.code !== 0 || !navRes.data?.isLogin) {
-        log("[BilibiliExp] 监测到你未登录B站，或当前网页由于跨域安全限制无法读取凭证。30分钟内不再重试。");
-        await GM.setValue("BiliExp_Lock", Date.now() + 25 * 60 * 1000); 
-        return;
-    }
-
-    // 尝试获取 CSRF
-    bili_jct = getBiliJctFromCookie(navRes.cookieRaw);
-    if (!bili_jct) {
-        log("[BilibiliExp] 未能在Cookie中截获 bili_jct，300分钟内跳过。");
-        await GM.setValue("BiliExp_Lock", Date.now() + 25 * 60 * 1000);
-        return;
-    }
-
-    // 开始主干业务
-    await startHiddenTask(currentDateStr);
 }
 
 async function startHiddenTask(currentDateStr) {
@@ -225,7 +222,7 @@ async function startHiddenTask(currentDateStr) {
         log("[BilibiliExp] 任务命令已发送。强制写入完成标记防止页面刷新时死循环。");
         await GM.setValue("BiliExp_LastDate", currentDateStr);
         
-        // 打印最终战果供控制台参考
+        // 打印最终战果
         await wait(2000);
         let finalReward = await gmAjax(REWARD_URL);
         if(finalReward.code === 0) {
@@ -235,16 +232,12 @@ async function startHiddenTask(currentDateStr) {
     } catch (e) {
         err("[BilibiliExp] 隐形守护线程发生致命错误", e);
     } finally {
-        // 释放锁
         await GM.setValue("BiliExp_Lock", 0);
     }
 }
 
-// 跨域异步网络请求器 (已加入强制破除缓存机制)
 function gmAjax(url) {
-    // 强制追加时间戳，防止浏览器对GET请求的死缓存，确保每次都能真实触达B站服务器激活登录经验
     let noCacheUrl = url + (url.includes('?') ? '&' : '?') + "_t=" + Date.now();
-    
     return new Promise((resolve) => {
         GM.xmlHttpRequest({
             method: "GET",
@@ -268,7 +261,6 @@ function gmAjax(url) {
     });
 }
 
-// POST请求器 (支持动态传入 Referer 以应对B站风控)
 function gmPostAjax(url, dataObj, customReferer) {
     let formBody = [];
     for (let property in dataObj) {
@@ -285,7 +277,6 @@ function gmPostAjax(url, dataObj, customReferer) {
             headers: {
                 "Content-Type": "application/x-www-form-urlencoded",
                 "Origin": "https://www.bilibili.com",
-                // 使用动态传入的具体视频页URL作为Referer，而非根目录
                 "Referer": customReferer || "https://www.bilibili.com/"
             },
             onload: (res) => {
@@ -303,7 +294,6 @@ function gmPostAjax(url, dataObj, customReferer) {
 function getBiliJctFromCookie(headersStr) {
     let inlineJct = getCookie("bili_jct");
     if (inlineJct) return inlineJct;
-    
     if (!headersStr) return "";
     let match = headersStr.match(/bili_jct=([a-f0-9]{32})/i);
     return match ? match[1] : "";
