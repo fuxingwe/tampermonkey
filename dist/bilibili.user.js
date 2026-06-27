@@ -3,9 +3,9 @@
 // @namespace    BilibiliExp
 // @match        *://*.bilibili.com/*
 // @noframes
-// @version      3.2.2
+// @version      3.2.3
 // @author       Dreace & Repairer & Gemini
-// @description  破解 B站 Referer 限制，强制伪装为主站请求，彻底解决在个人中心等子域名下登录失效的问题。并在日志中增强了经验值显示（支持已完成状态下常驻显示）。
+// @description  破解 B站 Referer 限制，强制伪装为主站请求。修复了投币逻辑缺陷与假完成判断。
 // @grant        GM.setValue
 // @grant        GM.getValue
 // @grant        GM_xmlhttpRequest
@@ -40,7 +40,6 @@ const err = (msg, ...args) => {
     console.error(`${getTimeStr()} ${msg}`, ...args);
 };
 
-// 经验信息格式化解析器
 function getExpInfo(li) {
     if (!li) return "[经验信息获取失败]";
     let curLv = li.current_level ?? "?";
@@ -92,7 +91,6 @@ async function tryExecuteWorkflow() {
             return;
         }
 
-        // 核心改动：将获取导航和经验的逻辑强行提前
         let navRes = await requestAPI(NAV_URL, "GET");
         if (navRes.code !== 0 || !navRes.data?.isLogin) {
             log("[BilibiliExp] 接口读取失败或未登录，请检查登录状态。");
@@ -100,11 +98,9 @@ async function tryExecuteWorkflow() {
         }
 
         let levelInfo = navRes.data.level_info;
-        // 这样每次刷新页面触发检测，都会雷打不动地先打印出当前的实时经验
         log(`[BilibiliExp] 👤 登录验证成功！当前用户: ${navRes.data.uname || "未知"} ${getExpInfo(levelInfo)}`);
         log(`[BilibiliExp] 守护线程触发检测。今日状态: ${lastRunDate === currentDateStr ? "✅ 已完成" : "⏳ 待执行"}`);
 
-        // 打印完当前经验后，如果是已完成状态，再安心地退出
         if (lastRunDate === currentDateStr) return;
 
         let lockTime = await GM.getValue("BiliExp_Lock", 0);
@@ -185,25 +181,33 @@ async function startHiddenTask(currentDateStr, levelInfo) {
             await wait(3000);
         }
 
-        // 2. 模拟投币
+        // 2. 模拟投币 (修复的核心逻辑)
+        let expectedCoinExp = coinExp; 
         if (coinExp < 50) {
             let totalMoney = (await requestAPI(NAV_URL, "GET")).data?.money || 0;
-            if (totalMoney >= 5) { 
-                let needExp = 50 - coinExp;
-                log(`[BilibiliExp] 投币经验未满(差${needExp}点)，硬币余额: ${totalMoney}。开始跨视频后台连投...`);
+            let needExp = 50 - coinExp;
+            let needCoins = needExp / 10;
+            let availableCoins = Math.floor(totalMoney);
 
+            if (availableCoins >= 1 && needCoins > 0) {
+                let tossCount = Math.min(needCoins, availableCoins);
+                log(`[BilibiliExp] 投币经验未满(差${needExp}点)，硬币余额: ${totalMoney}。准备后台连投 ${tossCount} 枚...`);
+
+                let successCount = 0;
                 for (let targetVideo of videoPool) {
-                    if (needExp <= 0) break;
+                    if (successCount >= tossCount) break;
 
                     let coinRes = await requestAPI(ADD_COIN_URL, "POST", {
                         aid: targetVideo.aid, 
+                        bvid: targetVideo.bvid, // 增加 BVID 传参，提高兼容性
                         multiply: 1, 
                         select_like: 0, 
                         csrf: bili_jct
                     });
 
                     if (coinRes.code === 0) {
-                        needExp -= 10;
+                        successCount++;
+                        expectedCoinExp += 10;
                         log(`[BilibiliExp] 后台成功为视频(BVID:${targetVideo.bvid})隐形投币1枚。`);
                         await wait(4000);
                     } else if (coinRes.code === -101) {
@@ -217,12 +221,14 @@ async function startHiddenTask(currentDateStr, levelInfo) {
                         await wait(2000);
                     }
                 }
-            } else {
-                log(`[BilibiliExp] 硬币余额较低(${totalMoney})，跳过投币任务以作保留。`);
+            } else if (availableCoins < 1) {
+                log(`[BilibiliExp] 硬币余额不足(${totalMoney})，跳过投币任务。`);
             }
+        } else {
+            expectedCoinExp = 50;
         }
 
-        // 3. 最终轮询校验机制
+        // 3. 最终轮询校验机制 (加入经验校验闭环)
         log("[BilibiliExp] 正在等待B站服务器刷新数据凭证...");
         let isAllDone = false;
         
@@ -235,9 +241,10 @@ async function startHiddenTask(currentDateStr, levelInfo) {
                 let fCoinExp = (fData.coins !== undefined) ? fData.coins : (fData.coin_exp || 0);
                 let fWatched = (fData.watch !== undefined) ? fData.watch : (fData.watch_av || false);
                 
-                log(`[BilibiliExp] 第 ${i} 次经验结算核对: 登录[${fData.login}] 观看[${fWatched}] 分享[${fData.share}] 投币已获EXP[${fCoinExp}]`);
+                log(`[BilibiliExp] 第 ${i} 次经验结算核对: 登录[${fData.login}] 观看[${fWatched}] 分享[${fData.share}] 投币已获EXP[${fCoinExp}] (目标:${expectedCoinExp})`);
                 
-                if (fData.login && fWatched && fData.share) {
+                // 【核心修复】：必须满足观看、分享、登录，并且经验值达到了期望值才算完成
+                if (fData.login && fWatched && fData.share && fCoinExp >= expectedCoinExp) {
                     isAllDone = true;
                     break;
                 }
@@ -251,7 +258,7 @@ async function startHiddenTask(currentDateStr, levelInfo) {
             log(`[BilibiliExp] 🎉 经验核对成功，全部任务已确认写入服务器。最新进度: ${getExpInfo(finalLevelInfo || levelInfo)}`);
             await GM.setValue("BiliExp_LastDate", currentDateStr);
         } else {
-            log("[BilibiliExp] ⚠️ 任务已下发完毕。若状态仍未刷新，通常是由于浏览器本地Cookie同步延迟引起的，请稍后刷新页面查看。");
+            log("[BilibiliExp] ⚠️ 任务结算遇到延迟或未达标。本次暂不标记完成，下次后台刷新时将自动重试漏掉的进度。");
         }
 
     } catch (e) {
