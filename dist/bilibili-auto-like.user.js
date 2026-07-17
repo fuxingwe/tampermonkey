@@ -23,10 +23,13 @@
 
 // ---------- 可调参数 ----------
 const KEYWORDS = ["生活", "日常", "vlog", "游戏", "科技", "音乐", "美食", "搞笑"]; // 轮换搜索关键词（覆盖分区越广，秒赞命中面越大）
-const POLL_INTERVAL = 8;                 // 检测轮询间隔(秒)：越小越接近“秒赞”，但搜索请求越频繁
-const POLL_JITTER = 3;                   // 轮询抖动(秒)，避免完全规律被识别
-const LIKE_COOLDOWN_MIN = 1;             // 连续点赞之间最小冷却(秒) —— 秒赞时极速但略微拟人
-const LIKE_COOLDOWN_MAX = 3;             // 连续点赞之间最大冷却(秒)
+const CHECK_INTERVAL_BASE = 300;        // 检测间隔基准(秒)：约每5分钟检测一轮最新视频并瞬时秒赞
+const CHECK_INTERVAL_MIN = 60;          // 检测间隔下限(秒)：点得少、不足以达上限时缩短到此处
+const CHECK_INTERVAL_MAX = 1800;        // 检测间隔上限(秒)：易打满上限时拉长到此处
+const CHECK_ADAPT_UP = 1.5;             // 需放慢时：检测间隔乘子(拉长检测)
+const CHECK_ADAPT_DOWN = 0.7;          // 需加快时：检测间隔乘子(缩短检测)
+const CYCLE_LIKE_COOLDOWN_MIN = 1;      // 同轮内连续点赞的极短冷却(秒)，秒赞仍近乎瞬时
+const CYCLE_LIKE_COOLDOWN_MAX = 2;
 const FRESH_WINDOW_MIN = 3;              // 只“秒赞”发布于最近 N 分钟内的视频（避开搜索索引延迟，又只盯刚上传的）
 const MAX_LIKES_PER_HOUR = 80;           // 每小时点赞上限（软性防护，非B站硬性规则；真正风控看 -352/-509 退避）
 const WINDOW_BASE_MIN = 60;              // 上限窗口基准(分钟)
@@ -45,6 +48,7 @@ let isRunning = false;
 let bili_jct = "";
 let myInfo = null;          // 登录信息(含 mid)，用于跳过自己的视频
 let backoffUntil = 0;       // 风控退避截止时间戳
+let checkIntervalMs = CHECK_INTERVAL_BASE * 1000; // 当前检测间隔(毫秒)，按是否易达上限自适应调整
 
 // ---------- 日志工具(青色高亮，与刷经验脚本一致风格) ----------
 function getTimeStr() {
@@ -252,7 +256,7 @@ async function likeVideo(v) {
     }, { referer: `https://www.bilibili.com/video/${v.bvid}` });
 }
 
-// ---------- 主循环：高频检测 + 发现刚上传的视频立即秒赞 ----------
+// ---------- 主循环：按自适应间隔检测 + 发现刚上传的视频立即秒赞 ----------
 let limitLogged = false;   // 本轮“达每小时上限”是否已提示过（避免反复刷屏）
 let backoffLogged = false; // 本轮“风控退避”是否已提示过
 
@@ -263,10 +267,32 @@ function fmtPubdate(tsSec) {
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+// 自适应调整“检测间隔”：检测本身均匀铺开(每轮间隔可调)，点赞仍瞬时。
+// 易打满上限 → 拉长间隔；点得少、不足以达上限 → 缩短间隔；节奏适中则保持。
+function adaptCheckInterval(st, likedThisCycle) {
+    const MIN = CHECK_INTERVAL_MIN * 1000;
+    const MAX = CHECK_INTERVAL_MAX * 1000;
+    if (st.count >= MAX_LIKES_PER_HOUR) {
+        checkIntervalMs = Math.min(MAX, Math.round(checkIntervalMs * CHECK_ADAPT_UP));
+        return;
+    }
+    let elapsed = Date.now() - st.start;
+    let expected = MAX_LIKES_PER_HOUR * (elapsed / st.len); // 当前进度下线性铺满应有的点赞数
+    if (elapsed > 120000 && expected > 3) {
+        let ratio = st.count / expected; // 实际/预期：>1 超前(易达上限)，<1 落后
+        if (ratio > 1.25) checkIntervalMs = Math.min(MAX, Math.round(checkIntervalMs * CHECK_ADAPT_UP));
+        else if (ratio < 0.75) checkIntervalMs = Math.max(MIN, Math.round(checkIntervalMs * CHECK_ADAPT_DOWN));
+        // 0.75~1.25 之间保持稳定
+    } else if (likedThisCycle === 0) {
+        // 本轮没点到且未达上限 → 间隔偏长，略缩短以更均匀铺满
+        checkIntervalMs = Math.max(MIN, Math.round(checkIntervalMs * CHECK_ADAPT_DOWN));
+    }
+}
+
 async function runLoop() {
     if (isRunning) return;
     isRunning = true;
-    let nextDelay = null; // null=用默认轮询间隔；否则按指定毫秒后唤醒（用于退避/达上限时睡到期限结束）
+    let nextDelay = null; // null=用自适应检测间隔；否则按指定毫秒后唤醒(退避/达上限时睡到期限结束)
     try {
         let enabled = await GM.getValue("BiliLike_Enabled", true);
         if (!enabled) { log("[暂停中] 自动点赞已关闭"); return; }
@@ -309,11 +335,10 @@ async function runLoop() {
             return;
         }
 
-        // 正常检测 + 秒赞
+        // 本轮检测 + 瞬时秒赞：取一个关键词的最新页，发现刚上传的视频立即全点
         let keyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
         let candidates = await collectCandidates(keyword);
-
-        // 对候选逐个立即点赞（秒赞），连续点赞之间仅留极短冷却
+        let likedThisCycle = 0;
         for (let v of candidates) {
             if (Date.now() < backoffUntil) break;
             if (st.count >= MAX_LIKES_PER_HOUR) {
@@ -338,9 +363,12 @@ async function runLoop() {
                 if (typeof v.like === 'number') extra.push(`点赞 ${v.like}`);
                 let extraStr = extra.length ? ` [${extra.join(' / ')}]` : '';
                 log(`⚡ 秒赞成功: 《${title}》 上传于 ${pub}${extraStr} BVID:${v.bvid} [本小时 ${st.count}/${MAX_LIKES_PER_HOUR}]`);
+                likedThisCycle++;
+                let cd = (CYCLE_LIKE_COOLDOWN_MIN + Math.random() * (CYCLE_LIKE_COOLDOWN_MAX - CYCLE_LIKE_COOLDOWN_MIN)) * 1000;
+                await wait(cd);
             } else if (res.code === 65006) {
                 await markProcessed(v.bvid, true);
-                log(`↩️ 已点赞过(重复): BVID:${v.bvid}`);
+                log(`↩️ 已点赞过(重复): BVID:${v.bvid}`); // 不计入本轮，继续看下一个候选
             } else if (res.code === -101) {
                 myInfo = null;
                 log(`⚠️ 账号凭证失效(code:-101)，下次重新登录校验`);
@@ -348,6 +376,7 @@ async function runLoop() {
             } else if (res.code === -352 || res.code === -412 || res.code === -509) {
                 backoffUntil = Date.now() + RISK_BACKOFF_MS;
                 backoffLogged = true;
+                nextDelay = backoffUntil - Date.now();
                 log(`⚠️ 触发风控/限流(code:${res.code})，自动退避 ${RISK_BACKOFF_MS / 60000} 分钟`);
                 break;
             } else if (res.code === -111) {
@@ -358,8 +387,13 @@ async function runLoop() {
             } else {
                 log(`⚠️ 点赞失败(code:${res.code})`, res.message || res.msg || '');
             }
-            let cd = (LIKE_COOLDOWN_MIN + Math.random() * (LIKE_COOLDOWN_MAX - LIKE_COOLDOWN_MIN)) * 1000;
-            await wait(cd);
+        }
+
+        // 本轮结束：根据是否易达上限，自适应调整下一轮检测间隔(检测均匀铺开，点赞仍瞬时)
+        adaptCheckInterval(st, likedThisCycle);
+        if (nextDelay == null) {
+            log(`🔍 本轮检测完成：秒赞 ${likedThisCycle} 个，下一轮检测间隔 ${(checkIntervalMs / 1000).toFixed(0)}s`);
+            nextDelay = checkIntervalMs;
         }
     } catch (e) {
         err("[循环异常]", e);
@@ -367,7 +401,7 @@ async function runLoop() {
         isRunning = false;
         let enabled = await GM.getValue("BiliLike_Enabled", true);
         if (enabled) {
-            let delay = (nextDelay != null) ? nextDelay : (POLL_INTERVAL + Math.random() * (2 * POLL_JITTER) - POLL_JITTER) * 1000;
+            let delay = (nextDelay != null) ? nextDelay : checkIntervalMs;
             setTimeout(runLoop, Math.max(1000, delay));
         }
     }
