@@ -60,6 +60,8 @@ const myTabId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 let iAmLeader = false;          // 本标签页是否当前“主实例”(唯一真正干活的)
 let standbyLogged = false;      // 待命提示是否已输出过(避免刷屏)
 let heartbeatTimer = null;      // 主实例心跳定时器
+let scheduledTimer = null;      // 自调度定时器句柄(用于避免重复调度)
+let forceRun = false;           // “立即运行一次”请求：强制本标签页接管并立即跑一轮
 
 // ---------- 日志工具(青色高亮，与刷经验脚本一致风格) ----------
 const LOG_PREFIX = "[AutoLike]";
@@ -325,18 +327,19 @@ async function runLoop() {
         let leader = await GM.getValue(LEADER_KEY, null);
         let now = Date.now();
         let leaderAlive = leader && leader.id !== myTabId && (now - leader.ts <= LEADER_LEASE_MS);
-        if (leaderAlive) {
+        if (leaderAlive && !forceRun) {
             iAmLeader = false;
             stopHeartbeat();
             if (!standbyLogged) { log(`[待命] 检测到主实例(标签页 ${leader.id}) 运行中，本标签页待命，每 ${Math.round(LEADER_POLL_MS / 1000)}s 检测一次`); standbyLogged = true; }
             nextDelay = LEADER_POLL_MS;
             return;
         }
-        if (!iAmLeader) log(leader ? `[接管] 主实例失联，本标签页接管自动点赞` : `[接管] 无主实例，本标签页开始执行自动点赞`);
+        if (!iAmLeader || forceRun) log(leader ? (forceRun ? `[接管] 强制接管自动点赞` : `[接管] 主实例失联，本标签页接管自动点赞`) : `[接管] 无主实例，本标签页开始执行自动点赞`);
         iAmLeader = true;
         standbyLogged = false;
         startHeartbeat();
         await GM.setValue(LEADER_KEY, { id: myTabId, ts: now });
+        if (forceRun) forceRun = false;
 
         // 风控退避：仅提示一次，之后静默等待，到点再继续检测
         if (Date.now() < backoffUntil) {
@@ -448,7 +451,7 @@ async function runLoop() {
         // 本轮结束：根据是否易达上限，自适应调整下一轮检测间隔(检测均匀铺开，点赞仍瞬时)
         adaptCheckInterval(st, likedThisCycle);
         if (nextDelay == null) {
-            log(`🔍 本轮检测完成：秒赞 ${likedThisCycle} 个，下一轮检测间隔 ${(checkIntervalMs / 1000).toFixed(0)}s`);
+            log(`🔍 本轮检测完成：候选 ${candidates.length} 个，秒赞 ${likedThisCycle} 个，下一轮检测间隔 ${(checkIntervalMs / 1000).toFixed(0)}s`);
             nextDelay = checkIntervalMs;
         }
     } catch (e) {
@@ -457,7 +460,7 @@ async function runLoop() {
         isRunning = false;
         if (enabled) {
             let delay = (nextDelay != null) ? nextDelay : checkIntervalMs;
-            setTimeout(runLoop, Math.max(1000, delay));
+            scheduledTimer = setTimeout(runLoop, Math.max(1000, delay));
         }
     }
 }
@@ -472,7 +475,10 @@ if (typeof GM_registerMenuCommand !== "undefined") {
         if (next && !isRunning) setTimeout(runLoop, 1000);
     });
     GM_registerMenuCommand("🔄 立即运行一次", () => {
-        if (isRunning) { log("正在运行中，请稍候"); return; }
+        if (scheduledTimer) { clearTimeout(scheduledTimer); scheduledTimer = null; }
+        forceRun = true;
+        if (isRunning) { log("⚡ 立即运行一次(当前轮次结束后马上再跑一轮)"); return; }
+        log("⚡ 立即运行一次");
         setTimeout(runLoop, 500);
     });
     GM_registerMenuCommand("📊 查看状态", async () => {
