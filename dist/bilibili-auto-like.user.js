@@ -49,14 +49,16 @@ let bili_jct = "";
 let myInfo = null;          // 登录信息(含 mid)，用于跳过自己的视频
 let backoffUntil = 0;       // 风控退避截止时间戳
 let checkIntervalMs = CHECK_INTERVAL_BASE * 1000; // 当前检测间隔(毫秒)，按是否易达上限自适应调整
+let totalLiked = 0;             // 累计已点赞总数（持久化，仅递增、不受 7 天清理影响）
 
 // ---------- 日志工具(青色高亮，与刷经验脚本一致风格) ----------
+const LOG_PREFIX = "[AutoLike]";
 function getTimeStr() {
     let now = new Date();
     return `[${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}]`;
 }
-const log = (msg, ...args) => console.log(`%c${getTimeStr()} ${msg}`, "color: #00a1d6; font-weight: bold;", ...args);
-const err = (msg, ...args) => console.error(`${getTimeStr()} ${msg}`, ...args);
+const log = (msg, ...args) => console.log(`%c${getTimeStr()} ${LOG_PREFIX} ${msg}`, "color: #00a1d6; font-weight: bold;", ...args);
+const err = (msg, ...args) => console.error(`${getTimeStr()} ${LOG_PREFIX} ${msg}`, ...args);
 const wait = (n) => new Promise(resolve => setTimeout(resolve, n));
 
 function getCookie(cname) {
@@ -203,17 +205,17 @@ async function requestAPI(url, method = "GET", dataObj = null, opts = {}) {
 // 记录“已点赞”或“已判定过”的视频，确保“首次见到即处理、之后绝不再碰”，这是秒赞不漏赞、不重复赞的关键
 async function loadProcessed() { return await GM.getValue("BiliLike_Processed", {}); }
 async function saveProcessed(map) { await GM.setValue("BiliLike_Processed", map); }
-async function markProcessed(bvid, liked) {
-    let map = await loadProcessed();
-    map[bvid] = { liked: liked, ts: Date.now() };
-    await saveProcessed(map);
-}
 async function pruneProcessed() {
     let map = await loadProcessed();
     let cutoff = Date.now() - HISTORY_KEEP_DAYS * 86400 * 1000;
     let changed = false;
     for (let k in map) if (map[k].ts < cutoff) { delete map[k]; changed = true; }
     if (changed) await saveProcessed(map);
+}
+
+// 累计已点赞总数：仅递增，不在此落盘；统一在每轮结束随已处理表批量持久化
+function incTotalLiked() {
+    totalLiked++;
 }
 
 // ---------- 拉取最新视频(关键词 + 发布时间排序) ----------
@@ -227,26 +229,26 @@ async function fetchLatestVideos(keyword, pn) {
 
 // 拉取某关键词“最新”页(pn=1)，筛出本轮要“秒赞”的候选；
 // 同时把已判定(自己的/过旧/已处理)的视频标记，避免以后反复拉取浪费请求
-async function collectCandidates(keyword) {
+// 复用调用方已加载的 processed 表，原地标记“非新鲜/自己的”视频并直接返回候选；
+// 不在内部落盘，交由 runLoop 在每轮结束统一批量保存，避免重复全量读写
+async function collectCandidates(keyword, processed) {
     let list = await fetchLatestVideos(keyword, 1); // 永远只看最新一页
-    if (list.length === 0) { log(`拉取关键词="${keyword}" 未获取到视频`); return []; }
+    if (list.length === 0) { log(`拉取关键词="${keyword}" 未获取到视频`); return { candidates: [], dirty: false }; }
     log(`拉取关键词="${keyword}" 最新视频 ${list.length} 条`);
 
-    let processed = await loadProcessed();
     let myMid = myInfo?.mid || 0;
     let now = Date.now(), freshMs = FRESH_WINDOW_MIN * 60000;
-    let changed = false, candidates = [];
+    let dirty = false, candidates = [];
 
     for (let v of list) {
         if (!v.bvid) continue;
         if (processed[v.bvid]) continue;                                                  // 已处理过(点过或判定过)
-        if (myMid && String(v.mid) === String(myMid)) { processed[v.bvid] = { liked: false, ts: now }; changed = true; continue; } // 自己的不点
+        if (myMid && String(v.mid) === String(myMid)) { processed[v.bvid] = { liked: false, ts: now }; dirty = true; continue; } // 自己的不点
         let pub = (v.pubdate || v.senddate) * 1000;
-        if (!pub || now - pub > freshMs) { processed[v.bvid] = { liked: false, ts: now }; changed = true; continue; }              // 非刚上传，跳过并记住
+        if (!pub || now - pub > freshMs) { processed[v.bvid] = { liked: false, ts: now }; dirty = true; continue; }              // 非刚上传，跳过并记住
         candidates.push(v);                                                                // 刚上传 + 未处理 → 秒赞候选
     }
-    if (changed) await saveProcessed(processed);
-    return candidates;
+    return { candidates, dirty };
 }
 
 // ---------- 点赞 ----------
@@ -293,8 +295,9 @@ async function runLoop() {
     if (isRunning) return;
     isRunning = true;
     let nextDelay = null; // null=用自适应检测间隔；否则按指定毫秒后唤醒(退避/达上限时睡到期限结束)
+    let enabled = true;
     try {
-        let enabled = await GM.getValue("BiliLike_Enabled", true);
+        enabled = await GM.getValue("BiliLike_Enabled", true);
         if (!enabled) { log("[暂停中] 自动点赞已关闭"); return; }
 
         // 风控退避：仅提示一次，之后静默等待，到点再继续检测
@@ -337,7 +340,13 @@ async function runLoop() {
 
         // 本轮检测 + 瞬时秒赞：取一个关键词的最新页，发现刚上传的视频立即全点
         let keyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
-        let candidates = await collectCandidates(keyword);
+        let processed = await loadProcessed();
+        // 复用本轮已加载的表原地做 7 天清理，随下方统一保存，避免长期运行下已处理表无限增长
+        let cutoff = Date.now() - HISTORY_KEEP_DAYS * 86400 * 1000;
+        let pruned = false;
+        for (let k in processed) if (processed[k].ts < cutoff) { delete processed[k]; pruned = true; }
+        let { candidates, dirty: candsDirty } = await collectCandidates(keyword, processed);
+        let processedDirty = candsDirty || pruned;
         let likedThisCycle = 0;
         for (let v of candidates) {
             if (Date.now() < backoffUntil) break;
@@ -353,21 +362,23 @@ async function runLoop() {
             let res = await likeVideo(v);
             let title = (v.title || "").replace(/<[^>]+>/g, '');
             if (res.code === 0) {
-                await markProcessed(v.bvid, true);
+                processed[v.bvid] = { liked: true, ts: Date.now() };
+                processedDirty = true;
                 st.count++;
-                await GM.setValue("BiliLike_Hour", st);
+                incTotalLiked();
                 // 附上上传时间，以及搜索结果里顺带有的播放量/点赞量（不额外调接口）
                 let pub = fmtPubdate(v.pubdate || v.senddate);
                 let extra = [];
                 if (typeof v.play === 'number') extra.push(`播放 ${v.play}`);
                 if (typeof v.like === 'number') extra.push(`点赞 ${v.like}`);
                 let extraStr = extra.length ? ` [${extra.join(' / ')}]` : '';
-                log(`⚡ 秒赞成功: 《${title}》 上传于 ${pub}${extraStr} BVID:${v.bvid} [本小时 ${st.count}/${MAX_LIKES_PER_HOUR}]`);
+                log(`⚡ 秒赞成功: 《${title}》 上传于 ${pub}${extraStr} BVID:${v.bvid} [本小时 ${st.count}/${MAX_LIKES_PER_HOUR}] [累计 ${totalLiked}]`);
                 likedThisCycle++;
                 let cd = (CYCLE_LIKE_COOLDOWN_MIN + Math.random() * (CYCLE_LIKE_COOLDOWN_MAX - CYCLE_LIKE_COOLDOWN_MIN)) * 1000;
                 await wait(cd);
             } else if (res.code === 65006) {
-                await markProcessed(v.bvid, true);
+                processed[v.bvid] = { liked: true, ts: Date.now() };
+                processedDirty = true;
                 log(`↩️ 已点赞过(重复): BVID:${v.bvid}`); // 不计入本轮，继续看下一个候选
             } else if (res.code === -101) {
                 myInfo = null;
@@ -389,6 +400,13 @@ async function runLoop() {
             }
         }
 
+        // 本轮持久化：批量落盘一次，避免“每赞一次就全量读+写一次已处理表”的 O(n²) 存储开销
+        if (processedDirty) await saveProcessed(processed);
+        if (likedThisCycle > 0) {
+            await GM.setValue("BiliLike_Hour", st);
+            await GM.setValue("BiliLike_TotalLiked", totalLiked);
+        }
+
         // 本轮结束：根据是否易达上限，自适应调整下一轮检测间隔(检测均匀铺开，点赞仍瞬时)
         adaptCheckInterval(st, likedThisCycle);
         if (nextDelay == null) {
@@ -399,7 +417,6 @@ async function runLoop() {
         err("[循环异常]", e);
     } finally {
         isRunning = false;
-        let enabled = await GM.getValue("BiliLike_Enabled", true);
         if (enabled) {
             let delay = (nextDelay != null) ? nextDelay : checkIntervalMs;
             setTimeout(runLoop, Math.max(1000, delay));
@@ -429,11 +446,13 @@ if (typeof GM_registerMenuCommand !== "undefined") {
         let inHour = inWindow ? st.count : 0;
         let bo = Date.now() < backoffUntil ? Math.ceil((backoffUntil - Date.now()) / 1000) + "s" : "否";
         let en = await GM.getValue("BiliLike_Enabled", true);
-        log(`📊 状态: 启用=${en} | 已处理=${Object.keys(map).length}条(其中已赞${liked}) | 本小时=${inHour}/${MAX_LIKES_PER_HOUR} | 退避=${bo} | 运行中=${isRunning}`);
+        log(`📊 状态: 启用=${en} | 已处理=${Object.keys(map).length}条(其中已赞${liked}) | 本小时=${inHour}/${MAX_LIKES_PER_HOUR} | 累计已赞=${totalLiked} | 退避=${bo} | 运行中=${isRunning}`);
     });
     GM_registerMenuCommand("🧹 清空已处理记录", async () => {
         await GM.setValue("BiliLike_Processed", {});
-        log("🧹 已清空已处理记录(换号/测试用)");
+        totalLiked = 0;
+        await GM.setValue("BiliLike_TotalLiked", 0);
+        log("🧹 已清空已处理记录与累计已赞(换号/测试用)");
     });
 }
 
@@ -442,6 +461,7 @@ if (typeof GM_registerMenuCommand !== "undefined") {
     log("脚本已启动，初始化中…");
     if (window.top !== window.self) return;
     if (window.location.href.includes("passport.bilibili.com")) return;
+    totalLiked = (await GM.getValue("BiliLike_TotalLiked", 0)) || 0;
     await pruneProcessed();
     setTimeout(runLoop, STARTUP_DELAY); // 启动后短延迟首次运行，之后自调度持续运行
 })();
