@@ -3,7 +3,7 @@
 // @namespace    BilibiliAutoLike
 // @match        *://*.bilibili.com/*
 // @noframes
-// @version      1.0.0
+// @version      1.0.1
 // @author       fuxing
 // @description  浏览器开启时全自动循环检测刚发布的B站视频并“秒赞”，高频轮询最新页+发现即点赞+极短冷却，按B站规则控制频率(每小时上限+风控退避)，WBI签名全本地自动完成，无需人工干预。
 // @grant        GM.setValue
