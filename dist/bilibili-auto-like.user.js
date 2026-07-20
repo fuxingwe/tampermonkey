@@ -26,11 +26,15 @@ const KEYWORDS = ["生活", "日常", "vlog", "游戏", "科技", "音乐", "美
 const CHECK_INTERVAL_BASE = 300;        // 检测间隔基准(秒)：约每5分钟检测一轮最新视频并瞬时秒赞
 const CHECK_INTERVAL_MIN = 60;          // 检测间隔下限(秒)：点得少、不足以达上限时缩短到此处
 const CHECK_INTERVAL_MAX = 1800;        // 检测间隔上限(秒)：易打满上限时拉长到此处
+const NO_HIT_POLL_MS = 5000;            // 本轮无新视频时的短轮询间隔(毫秒)：快速换词继续刷，直到真正点赞才拉长
 const CHECK_ADAPT_UP = 1.5;             // 需放慢时：检测间隔乘子(拉长检测)
 const CHECK_ADAPT_DOWN = 0.7;          // 需加快时：检测间隔乘子(缩短检测)
 const CYCLE_LIKE_COOLDOWN_MIN = 1;      // 同轮内连续点赞的极短冷却(秒)，秒赞仍近乎瞬时
 const CYCLE_LIKE_COOLDOWN_MAX = 2;
-const FRESH_WINDOW_MIN = 3;              // 只“秒赞”发布于最近 N 分钟内的视频（避开搜索索引延迟，又只盯刚上传的）
+const FRESH_WINDOW_MIN = 3;              // 基础新鲜度窗口(分钟)：只“秒赞”发布于最近 N 分钟内的视频
+const FRESH_WINDOW_MAX = 30;             // 新鲜度窗口放宽上限(分钟)：多次刷不到时自动放宽，但不超过此值
+const FRESH_WINDOW_WIDEN_STEP = 3;       // 每次放宽增加的分钟数
+const NO_HIT_WIDEN_AFTER = 3;            // 连续 N 轮没刷到新视频后才放宽窗口
 const MAX_LIKES_PER_HOUR = 80;           // 每小时点赞上限（软性防护，非B站硬性规则；真正风控看 -352/-509 退避）
 const WINDOW_BASE_MIN = 60;              // 上限窗口基准(分钟)
 const WINDOW_JITTER_MIN = 15;            // 窗口抖动(分钟)：实际窗口在 基准±抖动 间随机，避免整点规律重置
@@ -55,6 +59,9 @@ let bili_jct = "";
 let myInfo = null;          // 登录信息(含 mid)，用于跳过自己的视频
 let backoffUntil = 0;       // 风控退避截止时间戳
 let checkIntervalMs = CHECK_INTERVAL_BASE * 1000; // 当前检测间隔(毫秒)，按是否易达上限自适应调整
+let keywordIdx = -1;              // 轮询关键词索引(round-robin，确保每次换词不重复)
+let freshWindowMin = FRESH_WINDOW_MIN;    // 当前生效的新鲜度窗口(分钟)，没刷到时自动放宽、刷到后恢复
+let noHitStreak = 0;                     // 连续未刷到新视频的轮数(达到阈值触发窗口放宽)
 let totalLiked = 0;             // 累计已点赞总数（持久化，仅递增、不受 7 天清理影响）
 const myTabId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8); // 本实例唯一ID(每次页面加载重新生成)
 let iAmLeader = false;          // 本标签页是否当前“主实例”(唯一真正干活的)
@@ -260,7 +267,7 @@ async function collectCandidates(keyword, processed) {
     log(`拉取关键词="${keyword}" 最新视频 ${list.length} 条`);
 
     let myMid = myInfo?.mid || 0;
-    let now = Date.now(), freshMs = FRESH_WINDOW_MIN * 60000;
+    let now = Date.now(), freshMs = freshWindowMin * 60000, maxFreshMs = FRESH_WINDOW_MAX * 60000;
     let dirty = false, candidates = [];
 
     for (let v of list) {
@@ -268,7 +275,8 @@ async function collectCandidates(keyword, processed) {
         if (processed[v.bvid]) continue;                                                  // 已处理过(点过或判定过)
         if (myMid && String(v.mid) === String(myMid)) { processed[v.bvid] = { liked: false, ts: now }; dirty = true; continue; } // 自己的不点
         let pub = (v.pubdate || v.senddate) * 1000;
-        if (!pub || now - pub > freshMs) { processed[v.bvid] = { liked: false, ts: now }; dirty = true; continue; }              // 非刚上传，跳过并记住
+        if (!pub || now - pub > maxFreshMs) { processed[v.bvid] = { liked: false, ts: now }; dirty = true; continue; }          // 超过最大窗口才标记跳过(留给窗口放宽后重试)
+        if (now - pub > freshMs) continue;                                                // 当前窗口外、最大窗口内：不标记，留待窗口放宽后重试
         candidates.push(v);                                                                // 刚上传 + 未处理 → 秒赞候选
     }
     return { candidates, dirty };
@@ -380,7 +388,8 @@ async function runLoop() {
         }
 
         // 本轮检测 + 瞬时秒赞：取一个关键词的最新页，发现刚上传的视频立即全点
-        let keyword = KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
+        keywordIdx = (keywordIdx + 1) % KEYWORDS.length;
+        let keyword = KEYWORDS[keywordIdx];
         let processed = await loadProcessed();
         // 复用本轮已加载的表原地做 7 天清理，随下方统一保存，避免长期运行下已处理表无限增长
         let cutoff = Date.now() - HISTORY_KEEP_DAYS * 86400 * 1000;
@@ -448,12 +457,28 @@ async function runLoop() {
             await GM.setValue("BiliLike_TotalLiked", totalLiked);
         }
 
-        // 本轮结束：根据是否易达上限，自适应调整下一轮检测间隔(检测均匀铺开，点赞仍瞬时)
-        adaptCheckInterval(st, likedThisCycle);
-        if (nextDelay == null) {
-            log(`🔍 本轮检测完成：候选 ${candidates.length} 个，秒赞 ${likedThisCycle} 个，下一轮检测间隔 ${(checkIntervalMs / 1000).toFixed(0)}s`);
+        // 本轮结束：决定下一轮间隔与新鲜度窗口
+        if (likedThisCycle > 0) {
+            // 刷到了 → 恢复基础窗口、重置连错计数，用自适应较长间隔铺开
+            if (freshWindowMin !== FRESH_WINDOW_MIN) {
+                log(`✅ 刷到新视频，新鲜度窗口恢复为 ${FRESH_WINDOW_MIN} 分钟`);
+                freshWindowMin = FRESH_WINDOW_MIN;
+            }
+            noHitStreak = 0;
+            adaptCheckInterval(st, likedThisCycle);
             nextDelay = checkIntervalMs;
+        } else {
+            // 没刷到 → 连错+1，达到阈值则放宽窗口，短间隔快速换词继续轮询
+            noHitStreak++;
+            if (noHitStreak >= NO_HIT_WIDEN_AFTER && freshWindowMin < FRESH_WINDOW_MAX) {
+                let prev = freshWindowMin;
+                freshWindowMin = Math.min(FRESH_WINDOW_MAX, freshWindowMin + FRESH_WINDOW_WIDEN_STEP);
+                noHitStreak = 0;
+                log(`🔎 连续 ${NO_HIT_WIDEN_AFTER} 轮无新视频，新鲜度窗口放宽 ${prev}→${freshWindowMin} 分钟`);
+            }
+            nextDelay = NO_HIT_POLL_MS;
         }
+        log(`🔍 本轮检测完成：候选 ${candidates.length} 个，秒赞 ${likedThisCycle} 个，窗口 ${freshWindowMin} 分钟，下一轮间隔 ${(nextDelay / 1000).toFixed(0)}s`);
     } catch (e) {
         err("[循环异常]", e);
     } finally {
