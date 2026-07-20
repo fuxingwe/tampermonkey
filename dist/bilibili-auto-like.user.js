@@ -3,7 +3,7 @@
 // @namespace    BilibiliAutoLike
 // @match        *://*.bilibili.com/*
 // @noframes
-// @version      1.0.1
+// @version      1.0.2
 // @author       fuxing
 // @description  浏览器开启时全自动循环检测刚发布的B站视频并“秒赞”，高频轮询最新页+发现即点赞+极短冷却，按B站规则控制频率(每小时上限+风控退避)，WBI签名全本地自动完成，无需人工干预。
 // @grant        GM.setValue
@@ -23,19 +23,17 @@
 
 // ---------- 可调参数 ----------
 const KEYWORDS = ["生活", "日常", "vlog", "游戏", "科技", "音乐", "美食", "搞笑"]; // 轮换搜索关键词（覆盖分区越广，秒赞命中面越大）
-const CHECK_INTERVAL_BASE = 300;        // 检测间隔基准(秒)：约每5分钟检测一轮最新视频并瞬时秒赞
-const CHECK_INTERVAL_MIN = 60;          // 检测间隔下限(秒)：点得少、不足以达上限时缩短到此处
-const CHECK_INTERVAL_MAX = 1800;        // 检测间隔上限(秒)：易打满上限时拉长到此处
+const CHECK_INTERVAL_BASE = 15;         // 检测间隔基准(秒)：高频轮询最新页，贴近“秒赞”效果
+const CHECK_INTERVAL_MIN = 10;          // 检测间隔下限(秒)
+const CHECK_INTERVAL_MAX = 60;          // 检测间隔上限(秒)：仅作兜底(接近上限时由窗口逻辑睡到下一窗口)
 const NO_HIT_POLL_MS = 5000;            // 本轮无新视频时的短轮询间隔(毫秒)：快速换词继续刷，直到真正点赞才拉长
-const CHECK_ADAPT_UP = 1.5;             // 需放慢时：检测间隔乘子(拉长检测)
-const CHECK_ADAPT_DOWN = 0.7;          // 需加快时：检测间隔乘子(缩短检测)
 const CYCLE_LIKE_COOLDOWN_MIN = 1;      // 同轮内连续点赞的极短冷却(秒)，秒赞仍近乎瞬时
 const CYCLE_LIKE_COOLDOWN_MAX = 2;
 const FRESH_WINDOW_MIN = 3;              // 基础新鲜度窗口(分钟)：只“秒赞”发布于最近 N 分钟内的视频
 const FRESH_WINDOW_MAX = 30;             // 新鲜度窗口放宽上限(分钟)：多次刷不到时自动放宽，但不超过此值
 const FRESH_WINDOW_WIDEN_STEP = 3;       // 每次放宽增加的分钟数
 const NO_HIT_WIDEN_AFTER = 3;            // 连续 N 轮没刷到新视频后才放宽窗口
-const MAX_LIKES_PER_HOUR = 80;           // 每小时点赞上限（软性防护，非B站硬性规则；真正风控看 -352/-509 退避）
+const MAX_LIKES_PER_HOUR = 300;          // 每小时点赞上限(软性防护，非B站硬性规则；已适当放宽，真正风控由 -352/-412/-509 退避兜底)
 const WINDOW_BASE_MIN = 60;              // 上限窗口基准(分钟)
 const WINDOW_JITTER_MIN = 15;            // 窗口抖动(分钟)：实际窗口在 基准±抖动 间随机，避免整点规律重置
 const RISK_BACKOFF_MS = 10 * 60 * 1000;  // 命中风控/限流(-352/-412/-509)时退避 10 分钟
@@ -300,26 +298,10 @@ function fmtPubdate(tsSec) {
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-// 自适应调整“检测间隔”：检测本身均匀铺开(每轮间隔可调)，点赞仍瞬时。
-// 易打满上限 → 拉长间隔；点得少、不足以达上限 → 缩短间隔；节奏适中则保持。
+// 高频轮询优先：保持短间隔以最大化秒赞；降频只发生在命中 B 站风控/限流(-352/-412/-509)时的退避逻辑，不在此主动拉长。
 function adaptCheckInterval(st, likedThisCycle) {
     const MIN = CHECK_INTERVAL_MIN * 1000;
-    const MAX = CHECK_INTERVAL_MAX * 1000;
-    if (st.count >= MAX_LIKES_PER_HOUR) {
-        checkIntervalMs = Math.min(MAX, Math.round(checkIntervalMs * CHECK_ADAPT_UP));
-        return;
-    }
-    let elapsed = Date.now() - st.start;
-    let expected = MAX_LIKES_PER_HOUR * (elapsed / st.len); // 当前进度下线性铺满应有的点赞数
-    if (elapsed > 120000 && expected > 3) {
-        let ratio = st.count / expected; // 实际/预期：>1 超前(易达上限)，<1 落后
-        if (ratio > 1.25) checkIntervalMs = Math.min(MAX, Math.round(checkIntervalMs * CHECK_ADAPT_UP));
-        else if (ratio < 0.75) checkIntervalMs = Math.max(MIN, Math.round(checkIntervalMs * CHECK_ADAPT_DOWN));
-        // 0.75~1.25 之间保持稳定
-    } else if (likedThisCycle === 0) {
-        // 本轮没点到且未达上限 → 间隔偏长，略缩短以更均匀铺满
-        checkIntervalMs = Math.max(MIN, Math.round(checkIntervalMs * CHECK_ADAPT_DOWN));
-    }
+    checkIntervalMs = Math.max(MIN, CHECK_INTERVAL_BASE * 1000);
 }
 
 async function runLoop() {
