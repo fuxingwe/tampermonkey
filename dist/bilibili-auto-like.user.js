@@ -3,7 +3,7 @@
 // @namespace    BilibiliAutoLike
 // @match        *://*.bilibili.com/*
 // @noframes
-// @version      1.0.3
+// @version      1.0.4
 // @author       fuxing
 // @description  浏览器开启时全自动循环检测刚发布的B站视频并“秒赞”，高频轮询最新页+发现即点赞+极短冷却，按B站规则控制频率(每小时上限+风控退避)，WBI签名全本地自动完成，无需人工干预。
 // @grant        GM.setValue
@@ -36,9 +36,14 @@ const NO_HIT_WIDEN_AFTER = 3;            // 连续 N 轮没刷到新视频后才
 const MAX_LIKES_PER_HOUR = 900;          // 每小时点赞上限(软性防护，非B站硬性规则；已适当放宽，真正风控由 -352/-412/-509 退避兜底)
 const WINDOW_BASE_MIN = 60;              // 上限窗口基准(分钟)
 const WINDOW_JITTER_MIN = 15;            // 窗口抖动(分钟)：实际窗口在 基准±抖动 间随机，避免整点规律重置
-const RISK_BACKOFF_MS = 10 * 60 * 1000;  // 命中风控/限流(-352/-412/-509)时退避 10 分钟
+const RISK_BACKOFF_MS = 30 * 60 * 1000;  // 命中风控/限流(-352/-412/-509)时退避 30 分钟
+const LIKE_FAIL_DELAY_BASE = 10000;       // 点赞失败后同轮内基础延迟(ms)
+const LIKE_FAIL_DELAY_MAX  = 600000;      // 点赞失败后同轮内最大延迟(ms)
+const FAIL_STREAK_GLOBAL_THRESHOLD = 5;  // 连续失败达到此值触发全局退避
+const FAIL_STREAK_GLOBAL_BASE = 3600 * 1000;  // 全局退避基础 1h
+const FAIL_STREAK_GLOBAL_MAX  = 24 * 3600 * 1000; // 全局退避最大 24h
 const HISTORY_KEEP_DAYS = 7;             // 已处理记录保留天数，到期清理以限大小
-const STARTUP_DELAY = 2000;              // 启动后首次运行延迟(毫秒)，按你要求改为 2 秒
+const STARTUP_DELAY = 2000;              // 启动后首次运行延迟(毫秒)
 
 // ---------- 多标签页单实例协调 ----------
 const LEADER_KEY = "BiliLike_Leader";
@@ -67,6 +72,7 @@ let standbyLogged = false;      // 待命提示是否已输出过(避免刷屏)
 let heartbeatTimer = null;      // 主实例心跳定时器
 let scheduledTimer = null;      // 自调度定时器句柄(用于避免重复调度)
 let forceRun = false;           // “立即运行一次”请求：强制本标签页接管并立即跑一轮
+let consecutiveLikeFails = 0;   // 连续点赞失败次数（成功后重置为 0）
 
 // ---------- 日志工具(青色高亮，与刷经验脚本一致风格) ----------
 const LOG_PREFIX = "[AutoLike]";
@@ -394,6 +400,10 @@ async function runLoop() {
             let res = await likeVideo(v);
             let title = (v.title || "").replace(/<[^>]+>/g, '');
             if (res.code === 0) {
+                if (consecutiveLikeFails > 0) {
+                    log(`✅ 点赞成功，重置连续失败计数(之前 ${consecutiveLikeFails} 次)`);
+                    consecutiveLikeFails = 0;
+                }
                 processed[v.bvid] = { liked: true, ts: Date.now() };
                 processedDirty = true;
                 st.count++;
@@ -428,7 +438,22 @@ async function runLoop() {
                 log(`⚠️ 账号异常(code:-403)，停止点赞`);
                 break;
             } else {
-                log(`⚠️ 点赞失败(code:${res.code})`, res.message || res.msg || '');
+                // -401 非法访问 及其他未知错误：递增延迟退避
+                consecutiveLikeFails++;
+                let failDelay = Math.min(LIKE_FAIL_DELAY_MAX,
+                                          LIKE_FAIL_DELAY_BASE * Math.pow(2, consecutiveLikeFails - 1));
+                log(`⚠️ 点赞失败(code:${res.code})，连续失败 ${consecutiveLikeFails} 次，冷却 ${(failDelay/1000).toFixed(1)}s`,
+                    res.message || res.msg || '');
+                await wait(failDelay);
+
+                // 连续失败过多：触发全局退避并结束本轮
+                if (consecutiveLikeFails >= FAIL_STREAK_GLOBAL_THRESHOLD) {
+                    let globalMs = Math.min(FAIL_STREAK_GLOBAL_MAX,
+                        FAIL_STREAK_GLOBAL_BASE * Math.pow(2, consecutiveLikeFails - FAIL_STREAK_GLOBAL_THRESHOLD));
+                    backoffUntil = Date.now() + globalMs;
+                    log(`🚫 连续失败 ${consecutiveLikeFails} 次，触发全局退避 ${(globalMs/60000).toFixed(1)} 分钟`);
+                    break;
+                }
             }
         }
 
